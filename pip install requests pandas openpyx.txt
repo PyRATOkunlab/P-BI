@@ -1,0 +1,4 @@
+pip install requests pandas openpyxl
+$env:PYRAT_CLIENT_TOKEN = "1-9179ca8be1d02e9959084fae794d4099e6eb0a3b3a5c"
+$env:PYRAT_USER_TOKEN = "3-8733ce29113f3b187b84e7e77fb2778f5d6e986be066" 
+python build_dashboard.py --animals-live --licenses "license_list.csv" -o dashboard.html 
