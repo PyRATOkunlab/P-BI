@@ -1,16 +1,16 @@
-﻿Number,Title,Used,Total,Available,Valid from,Valid to,Lines / Strains
-2501-102-3,?Can pathological fetomaternal APP-expressing cell transfer be prevented,644,3097,2453,06/01/2025,06/01/2029,"5XFAD (70), 5xFAD-RFP+/+ (9), APP NL-G-F (53), APP NL-G-F RFP (82), APP/PS1 (21), C57BL6 (378), R26-mT/mG (31)"
-2503-113-1,B cell-mediated immune dysregulation promotes dementia in Down syndrome,236,1170,934,03/03/2025,03/03/2029,"C57BL6 (144), Dp(16)1Yah.H2 (9), Dp1Tyb (83)"
-2503-112-3,Can Alzheimer's disease related pathological pathways in mothers to fetuses with Down syndrome be treated?,60,696,636,03/03/2025,03/03/2029,"5XFAD (4), C57BL6 (56)"
-2403-108-2,Characterizing lymphoid structures in the dural meningeal sinuses of aged mice and early onset Alzheimer’s disease (EOAD) mouse models,460,460,0,10/03/2024,10/03/2028,"5XFAD (87), APP/PS1 (46), C57BL6 (327)"
-2403-107-1,Does Apolipoprotein E affect B-cell pathogenicity in Alzheimer’s disease,528,900,372,01/03/2024,10/03/2028,"5XFAD (75), APOE3-GFP (125), APOE3-GFP 5XFAD (17), APOE3-GFP APP/PS1 (36), APOE4-GFP (85), APOE4-GFP  APP/PS1 (49), APOE4-GFP 5XFAD (51), APP/PS1 (4), C57BL6 (81), C57BL6/J (5)"
-2503-110-3,Fetomaternal cell transfer during Amyloid-Beta-related neuroinflammation and its role in maternal brain health and neurodegeneration.,56,220,164,03/03/2025,03/03/2029,"5xFAD-RFP+/+ (4), C57BL6 (20), R26-mT/mG (28), Rosa26 mT/mG (4)"
-2606-117-3,Fetomaternal transfer of EVs during Down syndrome pregnancies as a risk factor of maternal Alzheimer’s disease pathogenes,18,1020,1002,29/06/2026,29/06/2030,"5xFAD-RFP+/+ (8), C57BL6 (2), C57BL6/J (2), R26-mT/mG (6)"
-2501-103-3,Intra-cisterna magna practice injections,26,27,1,06/01/2025,06/01/2029,"5XFAD (1), C57BL6 (25)"
-2404-114-2,Maternal exposure to fetal pathogenic factors affects cognition in offsprings in successive pregnancies.,190,234,44,02/04/2024,02/04/2028,"5XFAD (24), C57BL6 (152), C57BL6/J (14)"
-2502-107-3,Role of Meningeal Ectopic Lymphoid Structures in Alzheimer’s Disease and Aging,82,455,373,04/02/2025,04/02/2029,"5XFAD (28), APP/PS1 (17), C57BL6 (37)"
-2312-131-3,Targeting fetomaternal transferred cells to prevent maternal cognitive decline in mothers with down syndrome fetuses.,803,1296,493,28/11/2023,28/11/2027,"5XFAD (27), 5xFAD-GFP+/- (6), 5xFAD-RFP+/+ (70), 5xFAD-RFP+/- (18), APP/PS1 (25), C57BL6 (372), R26-mT/mG (100), Rosa26 mGFP (35), Rosa26 mT/mG (150)"
-2504-115-2,The meningeal immune system - ELS knockout mice,138,580,442,28/04/2025,28/04/2029,"5XFAD (41), C57BL6 (97)"
-2507-120-3,The role of meningeal ectopic lymphoid structures (ELS) in Alzheimer's disease progression and aging,255,1200,945,26/07/2025,26/07/2029,"None (40), 5XFAD (12), C57BL6 (130), C57BL6/J (73)"
-2412-133-1,The roles of Immunoglobulin A in Alzheimer-like pathology,433,1820,1387,02/12/2024,02/12/2028,"5XFAD (46), C57BL6 (10), C57BL6/J (296), Cre-ERT2 (81)"
-2305-110-3,Unraveling the role of fetomaternal cell transfer in the observed maternal cognitive decline following Down syndrome pregnancies.,428,428,0,02/05/2023,02/05/2027,"5XFAD (154), APP/PS1 (6), C57BL6 (240), C57BL6/J (28)"
+﻿Number,Valid from,Valid to
+2501-102-3,06/01/2025,06/01/2029
+2503-113-1,03/03/2025,03/03/2029
+2503-112-3,03/03/2025,03/03/2029
+2403-108-2,10/03/2024,10/03/2028
+2403-107-1,01/03/2024,10/03/2028
+2503-110-3,03/03/2025,03/03/2029
+2606-117-3,29/06/2026,29/06/2030
+2501-103-3,06/01/2025,06/01/2029
+2404-114-2,02/04/2024,02/04/2028
+2502-107-3,04/02/2025,04/02/2029
+2312-131-3,28/11/2023,28/11/2027
+2504-115-2,28/04/2025,28/04/2029
+2507-120-3,26/07/2025,26/07/2029
+2412-133-1,02/12/2024,02/12/2028
+2305-110-3,02/05/2023,02/05/2027
