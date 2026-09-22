@@ -172,7 +172,7 @@ body{
   box-shadow:var(--shadow);
   padding:12px 14px 6px 14px;
 }
-.chart-title{ font-size:16px; font-weight:600; color:#fff; margin-bottom:4px; }
+.chart-title{ font-size:21px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
 
@@ -689,11 +689,10 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('animals-chart-genotype', rows, 'Genotype', pageId, {limit:9});
 
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
-  renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'License title', all);
+  renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
 
@@ -730,7 +729,6 @@ function renderEthicsPage(){
   renderKPI('ethics-kpi-count', formatCompact(distinctCount(rows,'Number')), 'Count of Number');
 
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
-  renderCategoryChart('ethics-chart-class', rows, 'Classifications', pageId, {mode:'sum', valField:'Total', limit:8});
   renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:8});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
 
@@ -746,7 +744,7 @@ function renderEthicsPage(){
 const TABLE_COLUMNS = [
   {key:'ID', label:'ID'},
   {key:'Cage', label:'Cage'},
-  {key:'LicenseNumber', label:'License number'},
+  {key:'LicenseNumber', label:'Ethical approval number'},
   {key:'Room', label:'Room'},
   {key:'Responsible', label:'Responsible'},
 ];
@@ -759,7 +757,7 @@ function renderTablePage(){
 
   renderKPI('table-kpi-cages', formatCompact(distinctCount(rows,'Cage')), 'Count of Cage');
   renderKPI('table-kpi-animals', formatCompact(distinctCount(rows,'ID')), 'Count of ID');
-  renderKPI('table-kpi-license', formatCompact(distinctCount(rows,'LicenseNumber')), 'Count of License number');
+  renderKPI('table-kpi-license', formatCompact(distinctCount(rows,'LicenseNumber')), 'Count of Ethical approval number');
 
   renderCategoryChart('table-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:9});
@@ -872,7 +870,7 @@ __CSS__
 <div class="topbar">
   <div class="brand">
     <div class="brand-title">PyRAT Facility Dashboard</div>
-    <div class="brand-sub">Animal &amp; Cage License Management &nbsp;·&nbsp; <b>__ANIMAL_COUNT__</b> animal records &nbsp;·&nbsp; <b>__LICENSE_COUNT__</b> active licenses</div>
+    <div class="brand-sub">Animal &amp; Cage Ethical Approval Management &nbsp;·&nbsp; <b>__ANIMAL_COUNT__</b> animal records &nbsp;·&nbsp; <b>__LICENSE_COUNT__</b> active licenses</div>
   </div>
   <div class="tabs">
     <button class="tab-btn" data-page="animals">Animals</button>
@@ -919,10 +917,6 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Ethical approval</div>
       <div id="animals-chart-license" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Genotype1</div>
-      <div id="animals-chart-genotype" class="plot-el"></div>
     </div>
   </div>
 </section>
@@ -994,10 +988,6 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Line/strain</div>
       <div id="ethics-chart-strains" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Ethical approval classification</div>
-      <div id="ethics-chart-class" class="plot-el"></div>
     </div>
     <div class="chart-card">
       <div class="chart-title"># Used mice out of Total</div>
@@ -4688,12 +4678,9 @@ ANIMAL_ALIASES = {
 LICENSE_ALIASES = {
     'Number':          ['Number', 'מספר'],
     'Title':           ['Title', 'כותרת'],
-    'Classifications': ['Classifications', 'סיווגים'],
     'Used':            ['Used', 'בשימוש (חיות)', 'בשימוש'],
     'Total':           ['Total', 'סך הכל'],
     'Available':       ['Available', 'זמין'],
-    'ProjectLeaders':  ['Project leaders', 'מנהיגי פרויקט'],
-    'Status':          ['Status', 'סטטוס'],
     'ValidFrom':       ['Valid from', 'תקף מ'],
     'ValidTo':         ['Valid to', 'תקף עבור', 'תקף עד'],
     'LinesStrains':    ['Lines / Strains', 'קוים / סלילים', 'קווים / זנים'],
