@@ -14,6 +14,7 @@ with fresh data you need Python + pandas + openpyxl.
 import argparse
 import json
 import os
+import re
 import numpy as np
 import pandas as pd
 
@@ -231,6 +232,21 @@ APP_JS = r"""/* =========================================================
    Datasets: DATA.animals (AnimalCageLicense), DATA.licenses
    ========================================================= */
 
+// Derive a Responsible list per license, from the animals dataset — a
+// license itself has no "Responsible" field, but the animals under it do.
+// Lets the Ethical approval page filter by who's actually using a license.
+(function(){
+  const byLicense = new Map();
+  DATA.animals.forEach(a=>{
+    if(!a.LicenseNumber || !a.Responsible) return;
+    if(!byLicense.has(a.LicenseNumber)) byLicense.set(a.LicenseNumber, new Set());
+    byLicense.get(a.LicenseNumber).add(a.Responsible);
+  });
+  DATA.licenses.forEach(lic=>{
+    lic.Responsible = Array.from(byLicense.get(lic.Number) || []);
+  });
+})();
+
 const PALETTE = ['#118DFF','#12239E','#E66C37','#6B007B','#E044A7',
                   '#744EC2','#D9B300','#D64550','#4CBBB2','#7FC97F',
                   '#F2C4DE','#8A8A8A'];
@@ -328,7 +344,12 @@ function getFilteredRows(pageId){
     return fields.every(f=>{
       const spec = filters[f];
       if(spec.type==='set'){
-        const val = (r[f]===null||r[f]===undefined||r[f]==='') ? '(Blank)' : r[f];
+        const raw = r[f];
+        if(Array.isArray(raw)){
+          if(raw.length===0) return spec.set.has('(Blank)');
+          return raw.some(x=> spec.set.has(String(x)));
+        }
+        const val = (raw===null||raw===undefined||raw==='') ? '(Blank)' : String(raw);
         return spec.set.has(val);
       }
       if(spec.type==='range'){
@@ -616,27 +637,44 @@ function renderRangeSlicer(containerId, pageId, field, labelText, allRows){
 
 function renderDateRangeSlicer(containerId, pageId, field, headingText, subText, allRows){
   const container = document.getElementById(containerId);
-  const dates = allRows.map(r=>r[field]).filter(Boolean).sort();
+  // Only trust well-formed, plausible ISO dates for computing the slider's
+  // range — one bad value (e.g. year 0002 from a source typo) would
+  // otherwise sort before every real date and wreck the range for everyone.
+  const dates = allRows.map(r=>r[field]).filter(d=>{
+    if(!d) return false;
+    const y = parseInt(String(d).slice(0,4), 10);
+    return y >= 1990 && y <= 2100;
+  }).sort();
   const fullMin = dates[0], fullMax = dates[dates.length-1];
+  const toDays = iso => Math.round(Date.parse(iso + 'T00:00:00Z') / 86400000);
+  const toIso = days => new Date(days * 86400000).toISOString().slice(0,10);
+  const fullMinDays = toDays(fullMin), fullMaxDays = toDays(fullMax);
+
   const spec = state[pageId].filters[field];
   const curMin = (spec && spec.type==='daterange') ? spec.min : fullMin;
   const curMax = (spec && spec.type==='daterange') ? spec.max : fullMax;
 
   container.innerHTML = `
-    <div class="slicer-heading">${headingText}</div>
-    ${subText ? `<div class="slicer-sub">${subText}</div>` : ''}
-    <div class="date-slicer">
-      <label>from<input type="date" id="${containerId}-from" value="${curMin}" min="${fullMin}" max="${fullMax}"></label>
-      <label>to<input type="date" id="${containerId}-to" value="${curMax}" min="${fullMin}" max="${fullMax}"></label>
+    <div class="range-slicer">
+      <div class="slicer-heading">${headingText}</div>
+      ${subText ? `<div class="slicer-sub">${subText}</div>` : ''}
+      <div class="range-values"><span id="${containerId}-min">${curMin}</span><span id="${containerId}-max">${curMax}</span></div>
+      <input type="range" id="${containerId}-rmin" min="${fullMinDays}" max="${fullMaxDays}" step="1" value="${toDays(curMin)}">
+      <input type="range" id="${containerId}-rmax" min="${fullMinDays}" max="${fullMaxDays}" step="1" value="${toDays(curMax)}">
     </div>
   `;
-  const from = document.getElementById(`${containerId}-from`);
-  const to = document.getElementById(`${containerId}-to`);
+  const rmin = document.getElementById(`${containerId}-rmin`);
+  const rmax = document.getElementById(`${containerId}-rmax`);
   function commit(){
-    setDateRangeFilter(pageId, field, from.value, to.value, fullMin, fullMax);
+    let a = Number(rmin.value), b = Number(rmax.value);
+    if(a>b){ [a,b] = [b,a]; }
+    const isoA = toIso(a), isoB = toIso(b);
+    document.getElementById(`${containerId}-min`).textContent = isoA;
+    document.getElementById(`${containerId}-max`).textContent = isoB;
+    setDateRangeFilter(pageId, field, isoA, isoB, fullMin, fullMax);
   }
-  from.addEventListener('change', commit);
-  to.addEventListener('change', commit);
+  rmin.addEventListener('change', commit);
+  rmax.addEventListener('change', commit);
 }
 
 /* =========================================================
@@ -734,6 +772,7 @@ function renderEthicsPage(){
 
   renderListSlicer('ethics-slicer-title', pageId, 'Title', 'Ethical approval', 'Title', all);
   renderListSlicer('ethics-slicer-number', pageId, 'Number', 'Ethical approval', 'Number', all);
+  renderListSlicer('ethics-slicer-responsible', pageId, 'Responsible', 'Responsible', null, DATA.animals);
   renderDateRangeSlicer('ethics-slicer-validfrom', pageId, 'ValidFrom', 'Valid from', null, all);
   renderDateRangeSlicer('ethics-slicer-validto', pageId, 'ValidTo', 'Valid to', null, all);
 
@@ -975,6 +1014,7 @@ __CSS__
   <div class="slicer-rail">
     <div class="slicer" id="ethics-slicer-title"></div>
     <div class="slicer" id="ethics-slicer-number"></div>
+    <div class="slicer" id="ethics-slicer-responsible"></div>
     <div class="slicer" id="ethics-slicer-validfrom"></div>
     <div class="slicer" id="ethics-slicer-validto"></div>
   </div>
@@ -4686,20 +4726,78 @@ LICENSE_ALIASES = {
     'LinesStrains':    ['Lines / Strains', 'קוים / סלילים', 'קווים / זנים'],
 }
 
+# Minimal alias set for the small supplemental file used with --valid-dates,
+# which only needs to carry Number + ValidFrom + ValidTo (everything else
+# comes from --licenses-live). Same accepted column names as LICENSE_ALIASES.
+VALID_DATES_ALIASES = {
+    'Number':    LICENSE_ALIASES['Number'],
+    'ValidFrom': LICENSE_ALIASES['ValidFrom'],
+    'ValidTo':   LICENSE_ALIASES['ValidTo'],
+}
+
+def merge_valid_dates(licenses, dates_path):
+    """Overlay ValidFrom/ValidTo from a small supplemental file onto a
+    licenses list (matched by Number), leaving everything else untouched.
+    Used to pair --licenses-live (which can't get these two dates from the
+    API) with a small manually-kept file that only needs Number/Valid
+    from/Valid to — instead of the full manual license export."""
+    rows = load_sheet(dates_path, VALID_DATES_ALIASES)
+    by_number = {r['Number']: r for r in rows if r.get('Number')}
+
+    license_numbers = {lic.get('Number') for lic in licenses}
+    missing = sorted(license_numbers - set(by_number.keys()))
+    extra = sorted(set(by_number.keys()) - license_numbers)
+    if missing:
+        print(f"Note: {len(missing)} license(s) have no matching row in "
+              f"{dates_path}, so Valid from/to stayed blank for them: {missing}")
+    if extra:
+        print(f"Note: {len(extra)} row(s) in {dates_path} didn't match any "
+              f"license by Number (ignored): {extra}")
+
+    for lic in licenses:
+        match = by_number.get(lic.get('Number'))
+        if match:
+            lic['ValidFrom'] = match.get('ValidFrom')
+            lic['ValidTo'] = match.get('ValidTo')
+    return licenses
+
 def clean_val(v):
     if pd.isna(v):
         return None
     if isinstance(v, pd.Timestamp):
+        # Same implausible-year guard as the string path below — a data-entry
+        # slip in Excel (e.g. a 2-digit year Excel resolved oddly) can produce
+        # a wildly wrong date that then poisons every date picker on the page.
+        if not (1990 <= v.year <= 2100):
+            print(f"Warning: ignoring implausible date '{v}' (year {v.year} "
+                  f"looks like a typo in the source file) — treated as blank.")
+            return None
         return v.strftime("%Y-%m-%d")
     if isinstance(v, np.integer):
         return int(v)
     if isinstance(v, np.floating):
         return float(v)
     if isinstance(v, str):
-        # PyRAT sometimes exports dates as free text like "2025-01-06 00:00:00"
         s = v.strip()
+        # Already ISO ("2025-01-06" or "2025-01-06 00:00:00") — keep as-is
         if len(s) >= 10 and s[4] == '-' and s[7] == '-' and s[:10].replace('-', '').isdigit():
             return s[:10]
+        # DD/MM/YYYY (what PyRAT's manual CSV export uses for Valid from/to) —
+        # HTML date inputs require ISO YYYY-MM-DD or they silently show blank,
+        # so convert it here rather than leaving it broken in the browser.
+        m = re.fullmatch(r'(\d{1,2})/(\d{1,2})/(\d{4})', s)
+        if m:
+            day, month, year = m.groups()
+            # Sanity-check the year: a typo (e.g. "29/06/02" meant as 2030 but
+            # missing a digit) can silently produce a wildly wrong date, which
+            # then poisons the min/max range for EVERY date picker on the page
+            # (not just this one row) since it sorts before all real dates.
+            # Treat implausible years as missing rather than propagate them.
+            if not (1990 <= int(year) <= 2100):
+                print(f"Warning: ignoring implausible date '{s}' (year {year} "
+                      f"looks like a typo in the source file) — treated as blank.")
+                return None
+            return f"{year}-{int(month):02d}-{int(day):02d}"
         return v
     return v
 
@@ -4802,6 +4900,119 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200):
 
     return [{k: clean_val(v) for k, v in row.items()} for row in out]
 
+def fetch_licenses_live(base_url, client_token, user_token, page_size=100, debug_dump=False):
+    """Pull licenses from the live PyRAT API.
+
+    Per Scionics support (email, confirmed against the actual endpoint):
+    Used / Total / Available / Lines-Strains are NOT flat fields on a
+    license — they live nested inside the 'classifications' field. The
+    exact shape of that nesting isn't documented, so this function is
+    written defensively: it inspects each classification entry for a
+    handful of plausible key names, sums numeric fields across all of a
+    license's classifications (to mirror the single aggregated row per
+    license the manual CSV export produces), and raises a clear error
+    showing the *actual* JSON it received if none of the expected key
+    names are found — rather than silently producing zeros.
+    """
+    import requests
+    session = requests.Session()
+    session.auth = (client_token, user_token)
+    keys = ["license_id", "license_number", "license_title", "classifications"]
+    rows = []
+    offset = 0
+    while True:
+        resp = session.get(
+            f"{base_url}/licenses",
+            params={"k": keys, "l": page_size, "o": offset, "expired": "no", "deleted": "no"},
+        )
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    if debug_dump and rows:
+        print("--- DEBUG: raw first license record from the API ---")
+        print(json.dumps(rows[0], indent=2, ensure_ascii=False))
+        print("--- end debug dump ---")
+
+    # Confirmed from a real API response (2026-09) — exact key names PyRAT
+    # actually uses, listed first; older guesses kept as fallback in case
+    # this varies by PyRAT version.
+    USED_KEYS = ["classifications_used", "used", "num_used", "animals_used"]
+    TOTAL_KEYS = ["classifications_total", "total", "num_total", "quota", "total_animals"]
+    AVAIL_KEYS = ["classifications_available", "available", "num_available", "remaining"]
+    NAME_KEYS = ["classification_name", "name", "classification", "title"]
+    STRAIN_LIST_KEYS = ["classification_strains", "lines_strains", "lines", "strains", "lines_and_strains"]
+    STRAIN_NAME_KEYS = ["strain_name_with_id", "name", "strain", "strain_name", "line"]
+    STRAIN_COUNT_KEYS = ["animal_count", "count", "num", "total", "n"]
+
+    def first_present(d, keys):
+        for k in keys:
+            if isinstance(d, dict) and k in d and d[k] is not None:
+                return d[k]
+        return None
+
+    out = []
+    parse_failures = []
+    for r in rows:
+        rec = {
+            "Number": r.get("license_number"),
+            "Title": r.get("license_title"),
+        }
+        classifications = r.get("classifications")
+        used_sum, total_sum, avail_sum = 0, 0, 0
+        found_any_number = False
+        strain_parts = []
+        class_list = classifications if isinstance(classifications, list) else (
+            [classifications] if isinstance(classifications, dict) else []
+        )
+        for c in class_list:
+            u = first_present(c, USED_KEYS)
+            t = first_present(c, TOTAL_KEYS)
+            a = first_present(c, AVAIL_KEYS)
+            if u is not None or t is not None or a is not None:
+                found_any_number = True
+                used_sum += u or 0
+                total_sum += t or 0
+                avail_sum += a or 0
+            strains = first_present(c, STRAIN_LIST_KEYS)
+            if isinstance(strains, list):
+                for s in strains:
+                    sname = first_present(s, STRAIN_NAME_KEYS)
+                    scount = first_present(s, STRAIN_COUNT_KEYS)
+                    if sname is not None:
+                        strain_parts.append(f"{sname} ({scount})" if scount is not None else str(sname))
+
+        if class_list and not found_any_number:
+            parse_failures.append(r.get("license_number"))
+
+        rec["Used"] = used_sum
+        rec["Total"] = total_sum
+        rec["Available"] = avail_sum
+        rec["ValidFrom"] = None  # confirmed not available via this endpoint
+        rec["ValidTo"] = None    # confirmed not available via this endpoint
+        rec["LinesStrains"] = ", ".join(strain_parts) if strain_parts else None
+        out.append(rec)
+
+    if parse_failures:
+        sample = rows[0] if rows else {}
+        raise SystemExit(
+            "Could not find Used/Total/Available inside 'classifications' for "
+            f"{len(parse_failures)} license(s) (e.g. {parse_failures[:3]}).\n"
+            "The nested structure doesn't match any of the field names this "
+            "script tries. Here is the raw 'classifications' value for the "
+            "first license, so the parser can be fixed to match it:\n\n"
+            + json.dumps(sample.get("classifications"), indent=2, ensure_ascii=False)
+            + "\n\nRun again with --licenses-live-debug to see this for every "
+              "license, then share this output."
+        )
+
+    return [{k: clean_val(v) for k, v in row.items()} for row in out]
+
 def load_sheet(path, aliases):
     df = read_any(path)
     out_cols = {}
@@ -4830,19 +5041,30 @@ def main():
                      help="Pull animal/cage data live from the PyRAT API instead of --animals. "
                           "Requires PYRAT_CLIENT_TOKEN and PYRAT_USER_TOKEN environment variables.")
     ap.add_argument("--base-url", default="https://biu.pyrat.cloud/api/v3",
-                     help="PyRAT API base URL (only used with --animals-live)")
-    ap.add_argument("--licenses", required=True, help="Path to the license list export (.xlsx or .csv) — always manual")
+                     help="PyRAT API base URL (used with --animals-live / --licenses-live)")
+    ap.add_argument("--licenses", help="Path to the license list export (.xlsx or .csv)")
+    ap.add_argument("--licenses-live", action="store_true",
+                     help="Pull license data live from the PyRAT API instead of --licenses. "
+                          "Requires PYRAT_CLIENT_TOKEN and PYRAT_USER_TOKEN environment variables. "
+                          "Valid from/to are not available via the API even in this mode.")
+    ap.add_argument("--licenses-live-debug", action="store_true",
+                     help="With --licenses-live, print the raw API response structure before parsing.")
+    ap.add_argument("--valid-dates",
+                     help="Path to a small file (.xlsx or .csv) with just Number/Valid from/Valid to "
+                          "columns, merged onto --licenses-live data by Number. Lets you keep only "
+                          "the two fields PyRAT's API can't provide, instead of the full manual export.")
     ap.add_argument("-o", "--output", default="dashboard.html", help="Output HTML file path")
     args = ap.parse_args()
 
+    client_token = os.environ.get("PYRAT_CLIENT_TOKEN")
+    user_token = os.environ.get("PYRAT_USER_TOKEN")
+    if (args.animals_live or args.licenses_live) and not (client_token and user_token):
+        raise SystemExit(
+            "--animals-live / --licenses-live require PYRAT_CLIENT_TOKEN and "
+            "PYRAT_USER_TOKEN to be set as environment variables."
+        )
+
     if args.animals_live:
-        client_token = os.environ.get("PYRAT_CLIENT_TOKEN")
-        user_token = os.environ.get("PYRAT_USER_TOKEN")
-        if not client_token or not user_token:
-            raise SystemExit(
-                "--animals-live requires PYRAT_CLIENT_TOKEN and PYRAT_USER_TOKEN "
-                "to be set as environment variables."
-            )
         print("Fetching live animal data from PyRAT API...")
         animals = fetch_animals_live(args.base_url, client_token, user_token)
     elif args.animals:
@@ -4850,7 +5072,19 @@ def main():
     else:
         raise SystemExit("Provide either --animals <file> or --animals-live.")
 
-    licenses = load_sheet(args.licenses, LICENSE_ALIASES)
+    if args.licenses_live:
+        print("Fetching live license data from PyRAT API...")
+        licenses = fetch_licenses_live(args.base_url, client_token, user_token,
+                                        debug_dump=args.licenses_live_debug)
+    elif args.licenses:
+        licenses = load_sheet(args.licenses, LICENSE_ALIASES)
+    else:
+        raise SystemExit("Provide either --licenses <file> or --licenses-live.")
+
+    if args.valid_dates:
+        print(f"Merging Valid from/to dates from {args.valid_dates}...")
+        licenses = merge_valid_dates(licenses, args.valid_dates)
+
     data_json = json.dumps({"animals": animals, "licenses": licenses}, ensure_ascii=False)
 
     html = (SHELL
