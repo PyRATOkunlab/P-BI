@@ -24,7 +24,10 @@ jobs:
         pip install requests pandas openpyxl
 
     - name: Run Python script
-      run: python build_dashboard.py
+      env:
+        PYRAT_CLIENT_TOKEN: ${{ secrets.PYRAT_CLIENT_TOKEN }}
+        PYRAT_USER_TOKEN: ${{ secrets.PYRAT_USER_TOKEN }}
+      run: python build_dashboard.py --animals-live --licenses "license_list.csv" -o index.html
 
     - name: Commit and push updated HTML
       run: |
