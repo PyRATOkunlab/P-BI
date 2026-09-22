@@ -24,7 +24,7 @@ jobs:
         pip install pandas openpyxl requests
 
     - name: Run Python script
-      run: python build_dashboard.py
+      run: run: python build_dashboard.py --licenses license_list.csv -o index.html
 
     - name: Commit and push updated HTML
       run: |
