@@ -247,17 +247,6 @@ APP_JS = r"""/* =========================================================
   });
 })();
 
-// Bucket each animal's age-in-months into 6-month bands for a readable pie
-// chart (raw month values would be 40+ tiny slices, one per exact month).
-(function(){
-  DATA.animals.forEach(a=>{
-    const m = a.AgeM;
-    if(m===null || m===undefined || isNaN(m)){ a.AgeMBucket = null; return; }
-    const lo = Math.floor(m / 6) * 6;
-    a.AgeMBucket = `${lo}-${lo+5} mo`;
-  });
-})();
-
 const PALETTE = ['#118DFF','#12239E','#E66C37','#6B007B','#E044A7',
                   '#744EC2','#D9B300','#D64550','#4CBBB2','#7FC97F',
                   '#F2C4DE','#8A8A8A'];
@@ -556,6 +545,53 @@ function renderGroupedBar(elId, rows, catField, seriesFields, seriesNames, pageI
   });
 }
 
+// Single-series bar chart over a numeric field, one bar per integer value
+// in [minVal, maxVal] (zero-filled for values with no data, so spacing
+// stays even). Used for "age in months" as a bar rather than a pie.
+function renderNumericBar(elId, rows, field, pageId, minVal, maxVal){
+  const counts = new Map();
+  rows.forEach(r=>{
+    const v = r[field];
+    if(v===null || v===undefined || isNaN(v)) return;
+    if(v < minVal || v > maxVal) return;
+    const key = Math.round(v);
+    counts.set(key, (counts.get(key)||0) + 1);
+  });
+  const xs = [];
+  for(let m=minVal; m<=maxVal; m++) xs.push(m);
+  const ys = xs.map(m => counts.get(m) || 0);
+
+  const activeSet = (state[pageId].filters[field] && state[pageId].filters[field].type==='set')
+      ? state[pageId].filters[field].set : null;
+  const colors = xs.map(m=>{
+    if(!activeSet || activeSet.size===0) return PALETTE[0];
+    return activeSet.has(String(m)) ? PALETTE[0] : hexWithAlpha(PALETTE[0], 0.28);
+  });
+
+  const trace = {
+    type:'bar', x:xs, y:ys,
+    marker:{color:colors},
+    hovertemplate:'%{x} mo: %{y}<extra></extra>',
+  };
+  const layout = {
+    margin:{l:44,r:10,t:10,b:36},
+    xaxis:{title:{text:'Age (months)', font:{size:10, color:'#A7A7A7'}}, tickfont:{size:9, color:'#A7A7A7'},
+           dtick:1, gridcolor:'#2A2A2A'},
+    yaxis:{title:{text:'Count', font:{size:10, color:'#A7A7A7'}}, tickfont:{size:10, color:'#A7A7A7'}, gridcolor:'#2A2A2A'},
+    font:{family:'Segoe UI', color:'#F2F2F2'},
+    paper_bgcolor:'rgba(0,0,0,0)',
+    plot_bgcolor:'rgba(0,0,0,0)',
+  };
+  Plotly.react(elId, [trace], layout, PLOTLY_CONFIG);
+  _plotDivs.add(elId);
+  const div = document.getElementById(elId);
+  div.removeAllListeners && div.removeAllListeners('plotly_click');
+  div.on('plotly_click', (ev)=>{
+    if(!ev || !ev.points || !ev.points[0]) return;
+    toggleSetFilter(pageId, field, String(ev.points[0].x));
+  });
+}
+
 /* =========================================================
    Rendering: Slicers
    ========================================================= */
@@ -738,7 +774,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('animals-chart-age', rows, 'AgeMBucket', pageId, {limit:9});
+  renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24);
 
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
@@ -969,7 +1005,7 @@ __CSS__
       <div class="chart-title">Mice# by Ethical approval</div>
       <div id="animals-chart-license" class="plot-el"></div>
     </div>
-    <div class="chart-card">
+    <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
       <div id="animals-chart-age" class="plot-el"></div>
     </div>
