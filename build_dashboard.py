@@ -247,6 +247,17 @@ APP_JS = r"""/* =========================================================
   });
 })();
 
+// Bucket each animal's age-in-months into 6-month bands for a readable pie
+// chart (raw month values would be 40+ tiny slices, one per exact month).
+(function(){
+  DATA.animals.forEach(a=>{
+    const m = a.AgeM;
+    if(m===null || m===undefined || isNaN(m)){ a.AgeMBucket = null; return; }
+    const lo = Math.floor(m / 6) * 6;
+    a.AgeMBucket = `${lo}-${lo+5} mo`;
+  });
+})();
+
 const PALETTE = ['#118DFF','#12239E','#E66C37','#6B007B','#E044A7',
                   '#744EC2','#D9B300','#D64550','#4CBBB2','#7FC97F',
                   '#F2C4DE','#8A8A8A'];
@@ -727,6 +738,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
+  renderCategoryChart('animals-chart-age', rows, 'AgeMBucket', pageId, {limit:9});
 
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
@@ -956,6 +968,10 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Ethical approval</div>
       <div id="animals-chart-license" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Age (months)</div>
+      <div id="animals-chart-age" class="plot-el"></div>
     </div>
   </div>
 </section>
