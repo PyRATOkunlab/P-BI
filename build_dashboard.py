@@ -548,32 +548,52 @@ function renderGroupedBar(elId, rows, catField, seriesFields, seriesNames, pageI
 // Single-series bar chart over a numeric field, one bar per integer value
 // in [minVal, maxVal] (zero-filled for values with no data, so spacing
 // stays even). Used for "age in months" as a bar rather than a pie.
-function renderNumericBar(elId, rows, field, pageId, minVal, maxVal){
-  const counts = new Map();
-  rows.forEach(r=>{
-    const v = r[field];
-    if(v===null || v===undefined || isNaN(v)) return;
-    if(v < minVal || v > maxVal) return;
-    const key = Math.round(v);
-    counts.set(key, (counts.get(key)||0) + 1);
-  });
+function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField, splitOrder, splitColors, splitNames){
   const xs = [];
   for(let m=minVal; m<=maxVal; m++) xs.push(m);
-  const ys = xs.map(m => counts.get(m) || 0);
 
   const activeSet = (state[pageId].filters[field] && state[pageId].filters[field].type==='set')
       ? state[pageId].filters[field].set : null;
-  const colors = xs.map(m=>{
-    if(!activeSet || activeSet.size===0) return PALETTE[0];
-    return activeSet.has(String(m)) ? PALETTE[0] : hexWithAlpha(PALETTE[0], 0.28);
-  });
+  function shade(color, m){
+    if(!activeSet || activeSet.size===0) return color;
+    return activeSet.has(String(m)) ? color : hexWithAlpha(color, 0.28);
+  }
 
-  const trace = {
-    type:'bar', x:xs, y:ys,
-    marker:{color:colors},
-    hovertemplate:'%{x} mo: %{y}<extra></extra>',
-  };
+  let traces;
+  if(splitField){
+    // Stacked: one trace per split value, in the given order (first = bottom).
+    traces = splitOrder.map((sVal, i)=>{
+      const ys = xs.map(m=>{
+        return rows.filter(r=>{
+          const v = r[field];
+          return v!==null && v!==undefined && !isNaN(v) && Math.round(v)===m && r[splitField]===sVal;
+        }).length;
+      });
+      return {
+        type:'bar', name: (splitNames && splitNames[i]) || sVal, x:xs, y:ys,
+        marker:{color: xs.map(m=>shade(splitColors[i], m))},
+        hovertemplate: `%{x} mo — ${(splitNames && splitNames[i]) || sVal}: %{y}<extra></extra>`,
+      };
+    });
+  } else {
+    const counts = new Map();
+    rows.forEach(r=>{
+      const v = r[field];
+      if(v===null || v===undefined || isNaN(v)) return;
+      if(v < minVal || v > maxVal) return;
+      const key = Math.round(v);
+      counts.set(key, (counts.get(key)||0) + 1);
+    });
+    const ys = xs.map(m => counts.get(m) || 0);
+    traces = [{
+      type:'bar', x:xs, y:ys,
+      marker:{color: xs.map(m=>shade(PALETTE[0], m))},
+      hovertemplate:'%{x} mo: %{y}<extra></extra>',
+    }];
+  }
+
   const layout = {
+    barmode:'stack',
     margin:{l:44,r:10,t:10,b:36},
     xaxis:{title:{text:'Age (months)', font:{size:10, color:'#A7A7A7'}}, tickfont:{size:9, color:'#A7A7A7'},
            dtick:1, gridcolor:'#2A2A2A'},
@@ -581,8 +601,10 @@ function renderNumericBar(elId, rows, field, pageId, minVal, maxVal){
     font:{family:'Segoe UI', color:'#F2F2F2'},
     paper_bgcolor:'rgba(0,0,0,0)',
     plot_bgcolor:'rgba(0,0,0,0)',
+    showlegend: !!splitField,
+    legend:{orientation:'h', y:1.12, font:{size:10, family:'Segoe UI', color:'#F2F2F2'}},
   };
-  Plotly.react(elId, [trace], layout, PLOTLY_CONFIG);
+  Plotly.react(elId, traces, layout, PLOTLY_CONFIG);
   _plotDivs.add(elId);
   const div = document.getElementById(elId);
   div.removeAllListeners && div.removeAllListeners('plotly_click');
@@ -774,8 +796,9 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24);
+  renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
 
+  renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
   renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
@@ -976,6 +999,7 @@ __CSS__
   <div class="active-filters" id="animals-active-pills"></div>
 
   <div class="slicer-rail">
+    <div class="slicer" id="animals-slicer-sex"></div>
     <div class="slicer" id="animals-slicer-strain"></div>
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
