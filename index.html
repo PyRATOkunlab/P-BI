@@ -4354,6 +4354,9 @@ function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField,
       return {
         type:'bar', name: (splitNames && splitNames[i]) || sVal, x:xs, y:ys,
         marker:{color: xs.map(m=>shade(splitColors[i], m))},
+        text: ys.map(y=> y>0 ? String(y) : ''),
+        textposition:'inside',
+        insidetextfont:{size:9, color:'#0E0E0E'},
         hovertemplate: `%{x} mo — ${(splitNames && splitNames[i]) || sVal}: %{y}<extra></extra>`,
       };
     });
@@ -4370,6 +4373,9 @@ function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField,
     traces = [{
       type:'bar', x:xs, y:ys,
       marker:{color: xs.map(m=>shade(PALETTE[0], m))},
+      text: ys.map(y=> y>0 ? String(y) : ''),
+      textposition:'outside',
+      outsidetextfont:{size:9, color:'#F2F2F2'},
       hovertemplate:'%{x} mo: %{y}<extra></extra>',
     }];
   }
