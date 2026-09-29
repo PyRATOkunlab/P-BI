@@ -12,11 +12,18 @@ No server, no installation needed to VIEW it — only to REBUILD it
 with fresh data you need Python + pandas + openpyxl.
 """
 import argparse
+import datetime
 import json
 import os
 import re
 import numpy as np
 import pandas as pd
+
+# Bump this by hand whenever the script gains a new feature/fix — it's
+# shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
+# at the HTML can tell which build they're on. The build date next to it
+# updates on its own every time the script runs, no editing needed for that.
+DASHBOARD_VERSION = "1.5"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -97,21 +104,21 @@ body{
 .slicer-rail{ display:flex; flex-wrap:wrap; gap:22px; margin-bottom:18px; align-items:flex-end; }
 .slicer{ min-width:190px; }
 .slicer-heading{
-  font-size:19px; font-weight:700; color:#fff; margin-bottom:1px; line-height:1.15;
+  font-size:16.2px; font-weight:700; color:#fff; margin-bottom:1px; line-height:1.15;
 }
-.slicer-sub{ font-size:11px; color:var(--ink-soft); margin-bottom:5px; }
-.slicer-label{ font-size:19px; font-weight:700; color:#fff; margin-bottom:5px; }
+.slicer-sub{ font-size:9.4px; color:var(--ink-soft); margin-bottom:5px; }
+.slicer-label{ font-size:16.2px; font-weight:700; color:#fff; margin-bottom:5px; }
 
 /* dropdown control */
 .dd{ position:relative; width:210px; }
 .dd-btn{
   width:100%; text-align:left;
   background:var(--surface); border:1px solid var(--border); color:var(--ink);
-  padding:7px 10px; border-radius:3px; font-size:12.5px; font-family:'Segoe UI',sans-serif;
+  padding:7px 10px; border-radius:3px; font-size:10.6px; font-family:'Segoe UI',sans-serif;
   cursor:pointer; display:flex; justify-content:space-between; align-items:center;
 }
 .dd-btn:hover{ border-color:var(--accent); }
-.dd-btn .arrow{ color:var(--ink-soft); font-size:10px; }
+.dd-btn .arrow{ color:var(--ink-soft); font-size:8.5px; }
 .dd-panel{
   display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:40;
   background:#1C1C1C; border:1px solid var(--border); border-radius:4px;
@@ -121,29 +128,29 @@ body{
 .dd-panel.open{ display:block; }
 .dd-search{
   width:100%; background:#101010; border:1px solid var(--border); color:var(--ink);
-  border-radius:3px; padding:6px 8px; font-size:12px; margin-bottom:6px; font-family:'Segoe UI',sans-serif;
+  border-radius:3px; padding:6px 8px; font-size:10.2px; margin-bottom:6px; font-family:'Segoe UI',sans-serif;
 }
 .dd-list{ max-height:190px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
 .dd-item{
-  display:flex; align-items:center; gap:7px; font-size:12px; color:var(--ink);
+  display:flex; align-items:center; gap:7px; font-size:10.2px; color:var(--ink);
   cursor:pointer; padding:4px 6px; border-radius:3px;
 }
 .dd-item:hover{ background:#262626; }
 .dd-item input{ accent-color:var(--accent); cursor:pointer; }
 .dd-item.active-item{ background:var(--accent-dim); font-weight:600; }
-.dd-item .cnt{ margin-left:auto; color:var(--ink-soft); font-size:10.5px; }
+.dd-item .cnt{ margin-left:auto; color:var(--ink-soft); font-size:8.9px; }
 
 .range-slicer .range-values{
   display:flex; justify-content:space-between; width:210px;
-  font-size:13px; font-weight:700; color:#fff; margin-bottom:4px;
+  font-size:11.1px; font-weight:700; color:#fff; margin-bottom:4px;
 }
 .range-slicer input[type=range]{ width:210px; accent-color:var(--accent); }
 
 .date-slicer{ display:flex; flex-direction:column; gap:5px; }
-.date-slicer label{ font-size:11px; color:var(--ink-soft); display:flex; flex-direction:column; gap:3px; }
+.date-slicer label{ font-size:9.4px; color:var(--ink-soft); display:flex; flex-direction:column; gap:3px; }
 .date-slicer input[type=date]{
   background:var(--surface); border:1px solid var(--border); color:var(--ink);
-  border-radius:3px; padding:5px 7px; font-size:12px; width:210px; font-family:'Segoe UI',sans-serif;
+  border-radius:3px; padding:5px 7px; font-size:10.2px; width:210px; font-family:'Segoe UI',sans-serif;
 }
 
 /* ---------- KPI row ---------- */
@@ -161,7 +168,7 @@ body{
   font-family:'Segoe UI',sans-serif;
   font-size:28px; font-weight:700; color:var(--kpi-ink); line-height:1.1;
 }
-.kpi-label{ font-size:11.5px; color:#3a3a3a; font-weight:500; margin-top:3px; }
+.kpi-label{ font-size:7.4px; color:#3a3a3a; font-weight:500; margin-top:3px; }
 
 /* ---------- Chart grid ---------- */
 .chart-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:14px; }
@@ -173,7 +180,7 @@ body{
   box-shadow:var(--shadow);
   padding:12px 14px 6px 14px;
 }
-.chart-title{ font-size:21px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
+.chart-title{ font-size:16.8px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
 
@@ -460,7 +467,7 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     marker:{colors, line:{color:'#0E0E0E', width:1.5}},
     textinfo:'value',
     textposition:'outside',
-    textfont:{size:11, color:'#F2F2F2', family:'Segoe UI'},
+    textfont:{size:12.7, color:'#F2F2F2', family:'Segoe UI'},
     automargin:true,
     hovertemplate:'%{customdata}: %{value}<extra></extra>',
     sort:false,
@@ -542,7 +549,7 @@ function renderGroupedBar(elId, rows, catField, seriesFields, seriesNames, pageI
   const layout = {
     barmode:'group',
     margin:{l:44,r:10,t:10,b:70},
-    xaxis:{tickangle:-45, tickfont:{size:9, color:'#A7A7A7'}, automargin:true, gridcolor:'#2A2A2A'},
+    xaxis:{tickangle:-45, tickfont:{size:10.35, color:'#A7A7A7'}, automargin:true, gridcolor:'#2A2A2A'},
     yaxis:{tickfont:{size:10, color:'#A7A7A7'}, gridcolor:'#2A2A2A'},
     legend:{orientation:'h', y:1.12, font:{size:10, family:'Segoe UI', color:'#F2F2F2'}},
     font:{family:'Segoe UI', color:'#F2F2F2'},
@@ -588,7 +595,7 @@ function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField,
         marker:{color: xs.map(m=>shade(splitColors[i], m))},
         text: ys.map(y=> y>0 ? String(y) : ''),
         textposition:'inside',
-        insidetextfont:{size:9, color:'#0E0E0E'},
+        insidetextfont:{size:10.35, color:'#FFFFFF'},
         hovertemplate: `%{x} mo — ${(splitNames && splitNames[i]) || sVal}: %{y}<extra></extra>`,
       };
     });
@@ -607,7 +614,7 @@ function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField,
       marker:{color: xs.map(m=>shade(PALETTE[0], m))},
       text: ys.map(y=> y>0 ? String(y) : ''),
       textposition:'outside',
-      outsidetextfont:{size:9, color:'#F2F2F2'},
+      outsidetextfont:{size:10.35, color:'#FFFFFF'},
       hovertemplate:'%{x} mo: %{y}<extra></extra>',
     }];
   }
@@ -1010,7 +1017,7 @@ __CSS__
 <div class="topbar">
   <div class="brand">
     <div class="brand-title">PyRAT Facility Dashboard</div>
-    <div class="brand-sub">Animal &amp; Cage Ethical Approval Management &nbsp;·&nbsp; <b>__ANIMAL_COUNT__</b> animal records &nbsp;·&nbsp; <b>__LICENSE_COUNT__</b> active licenses</div>
+    <div class="brand-sub">Animal &amp; Cage Ethical Approval Management &nbsp;·&nbsp; <b>__ANIMAL_COUNT__</b> animal records &nbsp;·&nbsp; <b>__LICENSE_COUNT__</b> active licenses &nbsp;·&nbsp; v__VERSION__ (__BUILD_DATE__)</div>
   </div>
   <div class="tabs">
     <button class="tab-btn" data-page="animals">Animals</button>
@@ -5246,11 +5253,13 @@ def main():
             .replace("__APP_JS__", APP_JS)
             .replace("__PLOTLY__", PLOTLY)
             .replace("__ANIMAL_COUNT__", f"{len(animals):,}")
-            .replace("__LICENSE_COUNT__", f"{len(licenses):,}"))
+            .replace("__LICENSE_COUNT__", f"{len(licenses):,}")
+            .replace("__VERSION__", DASHBOARD_VERSION)
+            .replace("__BUILD_DATE__", datetime.date.today().isoformat()))
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"Done: {len(animals)} animal records, {len(licenses)} licenses -> {args.output}")
+    print(f"Done: v{DASHBOARD_VERSION}, {len(animals)} animal records, {len(licenses)} licenses -> {args.output}")
     print("Open that file in any browser to view the dashboard.")
 
 if __name__ == "__main__":
