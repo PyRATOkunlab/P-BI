@@ -3844,7 +3844,6 @@ footer.foot{ text-align:center; color:var(--ink-soft); font-size:11px; padding:2
     <div class="slicer" id="animals-slicer-strain"></div>
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
-    <div class="slicer" id="animals-slicer-license-number"></div>
     <div class="slicer range-slicer" id="animals-slicer-agem"></div>
     <div class="slicer range-slicer" id="animals-slicer-agew"></div>
   </div>
@@ -3954,14 +3953,6 @@ footer.foot{ text-align:center; color:var(--ink-soft); font-size:11px; padding:2
     <div class="chart-card full">
       <div class="chart-title">Used mice out of total</div>
       <div id="ethics-chart-used-avail" class="plot-el tall"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Ethical approval by title</div>
-      <div id="ethics-chart-title-pie" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Ethical approval by ID</div>
-      <div id="ethics-chart-number-pie" class="plot-el"></div>
     </div>
   </div>
 </section>
@@ -4569,7 +4560,6 @@ function renderAnimalsPage(){
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
   renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
-  renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
 
@@ -4608,8 +4598,6 @@ function renderEthicsPage(){
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
   renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:8});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
-  renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {limit:8});
-  renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {limit:8});
 
   renderListSlicer('ethics-slicer-title', pageId, 'Title', 'Ethical approval', 'Title', all);
   renderListSlicer('ethics-slicer-number', pageId, 'Number', 'Ethical approval', 'Number', all);
@@ -4624,8 +4612,6 @@ function renderEthicsPage(){
 const TABLE_COLUMNS = [
   {key:'ID', label:'ID'},
   {key:'Cage', label:'Cage'},
-  {key:'Sex', label:'Sex'},
-  {key:'Strain', label:'Line / Strain'},
   {key:'LicenseNumber', label:'Ethical approval number'},
   {key:'Room', label:'Room'},
   {key:'Responsible', label:'Responsible'},
