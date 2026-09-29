@@ -726,8 +726,8 @@ function renderRangeSlicer(containerId, pageId, field, labelText, allRows){
 
 function renderDateRangeSlicer(containerId, pageId, field, headingText, subText, allRows){
   const container = document.getElementById(containerId);
-  // Only trust well-formed, plausible ISO dates for computing the slider's
-  // range — one bad value (e.g. year 0002 from a source typo) would
+  // Only trust well-formed, plausible ISO dates for computing the picker's
+  // min/max — one bad value (e.g. year 0002 from a source typo) would
   // otherwise sort before every real date and wreck the range for everyone.
   const dates = allRows.map(r=>r[field]).filter(d=>{
     if(!d) return false;
@@ -735,35 +735,34 @@ function renderDateRangeSlicer(containerId, pageId, field, headingText, subText,
     return y >= 1990 && y <= 2100;
   }).sort();
   const fullMin = dates[0], fullMax = dates[dates.length-1];
-  const toDays = iso => Math.round(Date.parse(iso + 'T00:00:00Z') / 86400000);
-  const toIso = days => new Date(days * 86400000).toISOString().slice(0,10);
-  const fullMinDays = toDays(fullMin), fullMaxDays = toDays(fullMax);
 
   const spec = state[pageId].filters[field];
   const curMin = (spec && spec.type==='daterange') ? spec.min : fullMin;
   const curMax = (spec && spec.type==='daterange') ? spec.max : fullMax;
 
+  // Native <input type="date"> — clicking it opens the browser's own
+  // calendar picker, and typing is still allowed for quick entry.
   container.innerHTML = `
-    <div class="range-slicer">
+    <div class="date-slicer">
       <div class="slicer-heading">${headingText}</div>
       ${subText ? `<div class="slicer-sub">${subText}</div>` : ''}
-      <div class="range-values"><span id="${containerId}-min">${curMin}</span><span id="${containerId}-max">${curMax}</span></div>
-      <input type="range" id="${containerId}-rmin" min="${fullMinDays}" max="${fullMaxDays}" step="1" value="${toDays(curMin)}">
-      <input type="range" id="${containerId}-rmax" min="${fullMinDays}" max="${fullMaxDays}" step="1" value="${toDays(curMax)}">
+      <label>From
+        <input type="date" id="${containerId}-from" min="${fullMin}" max="${fullMax}" value="${curMin||''}">
+      </label>
+      <label>To
+        <input type="date" id="${containerId}-to" min="${fullMin}" max="${fullMax}" value="${curMax||''}">
+      </label>
     </div>
   `;
-  const rmin = document.getElementById(`${containerId}-rmin`);
-  const rmax = document.getElementById(`${containerId}-rmax`);
+  const fromEl = document.getElementById(`${containerId}-from`);
+  const toEl = document.getElementById(`${containerId}-to`);
   function commit(){
-    let a = Number(rmin.value), b = Number(rmax.value);
-    if(a>b){ [a,b] = [b,a]; }
-    const isoA = toIso(a), isoB = toIso(b);
-    document.getElementById(`${containerId}-min`).textContent = isoA;
-    document.getElementById(`${containerId}-max`).textContent = isoB;
-    setDateRangeFilter(pageId, field, isoA, isoB, fullMin, fullMax);
+    let a = fromEl.value || fullMin, b = toEl.value || fullMax;
+    if(a > b){ [a,b] = [b,a]; fromEl.value = a; toEl.value = b; }
+    setDateRangeFilter(pageId, field, a, b, fullMin, fullMax);
   }
-  rmin.addEventListener('change', commit);
-  rmax.addEventListener('change', commit);
+  fromEl.addEventListener('change', commit);
+  toEl.addEventListener('change', commit);
 }
 
 /* =========================================================
@@ -820,6 +819,7 @@ function renderAnimalsPage(){
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
 
   renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
+  renderDateRangeSlicer('animals-slicer-dob', pageId, 'DOB', 'Date of birth', null, all);
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
   renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
@@ -1034,6 +1034,7 @@ __CSS__
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
     <div class="slicer" id="animals-slicer-license-number"></div>
+    <div class="slicer" id="animals-slicer-dob"></div>
     <div class="slicer range-slicer" id="animals-slicer-agem"></div>
     <div class="slicer range-slicer" id="animals-slicer-agew"></div>
   </div>
@@ -4834,6 +4835,7 @@ ANIMAL_ALIASES = {
     'Sex':           ['Sex', 'מין'],
     'Strain':        ['Line / Strain (Name)', 'קו / זן (שם)'],
     'Genotype':      ['Genotype 1', 'גנוטיפ 1'],
+    'DOB':           ['DOB', 'Date of birth', 'תאריך לידה'],
     'AgeM':          ['Age (M)', 'גיל (חודשים)'],
     'AgeW':          ['Age (w)', 'גיל (שבועות)'],
     'LicenseTitle':  ['License title', 'כותרת רישיון'],
@@ -4983,6 +4985,10 @@ API_ANIMAL_FIELDS = {
     "responsible_fullname": "Responsible",
     "sex":            "Sex",
     "strain_name":    "Strain",
+    # Guessed field name — not yet confirmed against a real API response.
+    # If --animals-live comes back with DOB blank, check the actual key
+    # PyRAT uses (e.g. via a debug dump) and fix this mapping.
+    "birth_date":     "DOB",
     "age_weeks":      "AgeW",
     "age_days":       "_age_days",
     "licence_title":  "LicenseTitle",
