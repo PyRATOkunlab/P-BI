@@ -247,6 +247,20 @@ APP_JS = r"""/* =========================================================
   });
 })();
 
+// Same idea, for Sex — a license itself has no "Sex" field, but the
+// animals under it do. Lets the Ethical approval page filter by sex too.
+(function(){
+  const byLicense = new Map();
+  DATA.animals.forEach(a=>{
+    if(!a.LicenseNumber || !a.Sex) return;
+    if(!byLicense.has(a.LicenseNumber)) byLicense.set(a.LicenseNumber, new Set());
+    byLicense.get(a.LicenseNumber).add(a.Sex);
+  });
+  DATA.licenses.forEach(lic=>{
+    lic.Sex = Array.from(byLicense.get(lic.Number) || []);
+  });
+})();
+
 const PALETTE = ['#118DFF','#12239E','#E66C37','#6B007B','#E044A7',
                   '#744EC2','#D9B300','#D64550','#4CBBB2','#7FC97F',
                   '#F2C4DE','#8A8A8A'];
@@ -831,6 +845,7 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
 
+  renderListSlicer('cages-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('cages-slicer-cage-label', pageId, 'CageLabel', 'Cage label', null, all);
   renderListSlicer('cages-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('cages-slicer-cage', pageId, 'Cage', 'Cage ID', null, all);
@@ -854,6 +869,7 @@ function renderEthicsPage(){
 
   renderListSlicer('ethics-slicer-title', pageId, 'Title', 'Ethical approval', 'Title', all);
   renderListSlicer('ethics-slicer-number', pageId, 'Number', 'Ethical approval', 'Number', all);
+  renderListSlicer('ethics-slicer-sex', pageId, 'Sex', 'Sex', null, DATA.animals);
   renderListSlicer('ethics-slicer-responsible', pageId, 'Responsible', 'Responsible', null, DATA.animals);
   renderDateRangeSlicer('ethics-slicer-validfrom', pageId, 'ValidFrom', 'Valid from', null, all);
   renderDateRangeSlicer('ethics-slicer-validto', pageId, 'ValidTo', 'Valid to', null, all);
@@ -885,6 +901,7 @@ function renderTablePage(){
   renderCategoryChart('table-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:9});
 
+  renderListSlicer('table-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('table-slicer-responsible', pageId, 'Responsible', 'Responsible', 'Name', all);
   renderListSlicer('table-slicer-title', pageId, 'LicenseTitle', 'Ethical approval', 'Title', all);
   renderListSlicer('table-slicer-license', pageId, 'LicenseNumber', 'Ethical approval', 'Number', all);
@@ -1063,6 +1080,7 @@ __CSS__
   <div class="active-filters" id="cages-active-pills"></div>
 
   <div class="slicer-rail">
+    <div class="slicer" id="cages-slicer-sex"></div>
     <div class="slicer" id="cages-slicer-responsible"></div>
     <div class="slicer" id="cages-slicer-cage"></div>
     <div class="slicer" id="cages-slicer-cage-label"></div>
@@ -1112,6 +1130,7 @@ __CSS__
   <div class="slicer-rail">
     <div class="slicer" id="ethics-slicer-title"></div>
     <div class="slicer" id="ethics-slicer-number"></div>
+    <div class="slicer" id="ethics-slicer-sex"></div>
     <div class="slicer" id="ethics-slicer-responsible"></div>
     <div class="slicer" id="ethics-slicer-validfrom"></div>
     <div class="slicer" id="ethics-slicer-validto"></div>
@@ -1155,6 +1174,7 @@ __CSS__
   <div class="active-filters" id="table-active-pills"></div>
 
   <div class="slicer-rail">
+    <div class="slicer" id="table-slicer-sex"></div>
     <div class="slicer" id="table-slicer-title"></div>
     <div class="slicer" id="table-slicer-license"></div>
     <div class="slicer" id="table-slicer-responsible"></div>
