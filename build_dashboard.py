@@ -774,6 +774,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
+  renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24);
 
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
@@ -799,6 +800,7 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
+  renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
 
   renderListSlicer('cages-slicer-cage-label', pageId, 'CageLabel', 'Cage label', null, all);
   renderListSlicer('cages-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
@@ -1011,6 +1013,10 @@ __CSS__
       <div class="chart-title">Mice# by Ethical approval</div>
       <div id="animals-chart-license" class="plot-el"></div>
     </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Responsible</div>
+      <div id="animals-chart-responsible" class="plot-el"></div>
+    </div>
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
       <div id="animals-chart-age" class="plot-el"></div>
@@ -1057,6 +1063,10 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by ethical approval</div>
       <div id="cages-chart-license" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Responsible</div>
+      <div id="cages-chart-responsible" class="plot-el"></div>
     </div>
   </div>
 </section>
