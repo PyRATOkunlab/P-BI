@@ -4985,20 +4985,30 @@ API_ANIMAL_FIELDS = {
     "responsible_fullname": "Responsible",
     "sex":            "Sex",
     "strain_name":    "Strain",
-    # Guessed field name — not yet confirmed against a real API response.
-    # If --animals-live comes back with DOB blank, check the actual key
-    # PyRAT uses (e.g. via a debug dump) and fix this mapping.
-    "birth_date":     "DOB",
     "age_weeks":      "AgeW",
     "age_days":       "_age_days",
     "licence_title":  "LicenseTitle",
     "cagelabel":      "CageLabel",
 }
 
-def fetch_animals_live(base_url, client_token, user_token, page_size=200):
+def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_dump=False):
     import requests
     session = requests.Session()
     session.auth = (client_token, user_token)
+
+    if debug_dump:
+        # Deliberately request WITHOUT 'k' — a request that names a field
+        # PyRAT doesn't recognize fails the whole call with 422 (learned the
+        # hard way with a guessed "birth_date" key), so the safe way to find
+        # a field's real name is to ask for a record with no field filter at
+        # all and read the keys it comes back with.
+        dbg = session.get(f"{base_url}/animals", params={"l": 1, "o": 0, "state": "live"})
+        dbg.raise_for_status()
+        dbg_rows = dbg.json()
+        print("--- DEBUG: raw first animal record from the API (no field filter) ---")
+        print(json.dumps(dbg_rows[0] if dbg_rows else {}, indent=2, ensure_ascii=False))
+        print("--- end debug dump ---")
+
     keys = list(API_ANIMAL_FIELDS.keys())
     rows = []
     offset = 0
@@ -5022,6 +5032,13 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200):
         age_days = r.get("age_days")
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
+        # DOB: left blank in --animals-live mode. An earlier guess at the API's
+        # field name ("birth_date") turned out to be invalid — PyRAT's API
+        # rejects the whole request with 422 Unprocessable Entity if any key in
+        # 'k' isn't a real field name (it doesn't just return that field blank).
+        # Use --animals-live-debug to see one raw record's actual field names,
+        # find the correct birth-date key, and add it back to API_ANIMAL_FIELDS.
+        rec["DOB"] = None
         out.append(rec)
 
     # # Animals in cage: computed by grouping (not a per-animal API field)
@@ -5172,6 +5189,9 @@ def main():
     ap.add_argument("--animals-live", action="store_true",
                      help="Pull animal/cage data live from the PyRAT API instead of --animals. "
                           "Requires PYRAT_CLIENT_TOKEN and PYRAT_USER_TOKEN environment variables.")
+    ap.add_argument("--animals-live-debug", action="store_true",
+                     help="With --animals-live, print one raw unfiltered animal record before "
+                          "parsing (to look up real field names, e.g. for date of birth).")
     ap.add_argument("--base-url", default="https://biu.pyrat.cloud/api/v3",
                      help="PyRAT API base URL (used with --animals-live / --licenses-live)")
     ap.add_argument("--licenses", help="Path to the license list export (.xlsx or .csv)")
@@ -5198,7 +5218,8 @@ def main():
 
     if args.animals_live:
         print("Fetching live animal data from PyRAT API...")
-        animals = fetch_animals_live(args.base_url, client_token, user_token)
+        animals = fetch_animals_live(args.base_url, client_token, user_token,
+                                      debug_dump=args.animals_live_debug)
     elif args.animals:
         animals = load_sheet(args.animals, ANIMAL_ALIASES)
     else:
