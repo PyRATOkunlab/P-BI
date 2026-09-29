@@ -4233,6 +4233,37 @@ function renderKPI(elId, value, label, amber){
 /* =========================================================
    Rendering: Pie / Donut
    ========================================================= */
+// Target diameter (px) every pie/donut on the dashboard should end up at.
+// A pie with a long legend (e.g. long room names) makes Plotly auto-expand
+// the right margin to fit the legend text, which shrinks that chart's own
+// drawing area — and since the pie's size is a FRACTION of that area, the
+// same fixed domain fraction then yields a visibly smaller pie than a chart
+// whose legend is short. Fixed pixel margins don't fix this without either
+// clipping long legends or shrinking every chart down to the worst case, so
+// instead we let Plotly lay out normally, measure the pie it actually drew,
+// and — only if it came out smaller than the target — grow its domain to
+// reclaim exactly the space the shrunken chart is missing.
+const PIE_TARGET_PX = 142;
+
+function equalizePieSize(elId){
+  const container = document.getElementById(elId);
+  if(!container) return;
+  const slices = container.querySelectorAll('path.surface');
+  if(!slices.length) return;
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  slices.forEach(p=>{
+    const b = p.getBoundingClientRect();
+    minX=Math.min(minX,b.left); minY=Math.min(minY,b.top);
+    maxX=Math.max(maxX,b.right); maxY=Math.max(maxY,b.bottom);
+  });
+  const achieved = Math.max(maxX-minX, maxY-minY);
+  if(!achieved || !isFinite(achieved) || achieved >= PIE_TARGET_PX - 1) return;
+  const scale = Math.min(2, PIE_TARGET_PX / achieved); // cap the jump, just in case
+  const halfSpan = Math.min(0.499, ((0.745-0.255)/2) * scale);
+  const lo = 0.5 - halfSpan, hi = 0.5 + halfSpan;
+  Plotly.restyle(elId, {'domain.x':[[lo,hi]], 'domain.y':[[lo,hi]]});
+}
+
 function renderCategoryChart(elId, rows, field, pageId, opts){
   opts = opts || {};
   const mode = opts.mode || 'count'; // 'count' | 'sum'
@@ -4276,7 +4307,7 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     plot_bgcolor:'rgba(0,0,0,0)',
     font:{family:'Segoe UI', color:'#F2F2F2'},
   };
-  Plotly.react(elId, [trace], layout, PLOTLY_CONFIG);
+  Plotly.react(elId, [trace], layout, PLOTLY_CONFIG).then(()=> equalizePieSize(elId));
   _plotDivs.add(elId);
   const div = document.getElementById(elId);
   div.removeAllListeners && div.removeAllListeners('plotly_click');
