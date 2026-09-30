@@ -5029,25 +5029,66 @@ API_ANIMAL_FIELDS = {
     "cagelabel":      "CageLabel",
 }
 
+def discover_dob_field(session, base_url, debug_dump=False):
+    """Auto-detect the API's field name for an animal's date of birth.
+
+    We got burned once by hardcoding a guessed field name ("birth_date"):
+    it was wrong, and PyRAT rejects the WHOLE request with 422 Unprocessable
+    Entity if any single key in 'k' isn't real — not just that one field
+    coming back blank — which broke the live pipeline entirely. So instead
+    of guessing again, this fetches one record with NO field filter (always
+    safe, since an unfiltered request can't be rejected for an unknown key)
+    and looks for a key that both looks birth-date-ish by name and holds a
+    date-shaped value. If PyRAT ever renames the field, this keeps working
+    without another manual fix.
+    """
+    try:
+        resp = session.get(f"{base_url}/animals", params={"l": 1, "o": 0, "state": "live"})
+        resp.raise_for_status()
+        rows = resp.json()
+    except Exception as e:
+        if debug_dump:
+            print(f"--- DEBUG: DOB field auto-detect failed to fetch a sample record: {e} ---")
+        return None
+    if not rows:
+        return None
+    record = rows[0]
+
+    if debug_dump:
+        print("--- DEBUG: raw first animal record from the API (no field filter) ---")
+        print(json.dumps(record, indent=2, ensure_ascii=False))
+        print("--- end debug dump ---")
+
+    name_hints = ("birth", "dob", "born")
+    date_re = re.compile(r'^\d{4}-\d{2}-\d{2}')
+    candidates = [k for k in record if any(h in k.lower() for h in name_hints)]
+    picked = None
+    for k in candidates:
+        v = record.get(k)
+        if isinstance(v, str) and date_re.match(v):
+            picked = k
+            break
+    if picked is None and candidates:
+        # None of the candidates had a date-shaped value in this one sample
+        # record (could just be blank for this animal) — fall back to the
+        # first name match rather than giving up.
+        picked = candidates[0]
+
+    if debug_dump:
+        print(f"--- DEBUG: DOB field auto-detect -> {picked!r} (candidates seen: {candidates}) ---")
+
+    return picked
+
 def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_dump=False):
     import requests
     session = requests.Session()
     session.auth = (client_token, user_token)
 
-    if debug_dump:
-        # Deliberately request WITHOUT 'k' — a request that names a field
-        # PyRAT doesn't recognize fails the whole call with 422 (learned the
-        # hard way with a guessed "birth_date" key), so the safe way to find
-        # a field's real name is to ask for a record with no field filter at
-        # all and read the keys it comes back with.
-        dbg = session.get(f"{base_url}/animals", params={"l": 1, "o": 0, "state": "live"})
-        dbg.raise_for_status()
-        dbg_rows = dbg.json()
-        print("--- DEBUG: raw first animal record from the API (no field filter) ---")
-        print(json.dumps(dbg_rows[0] if dbg_rows else {}, indent=2, ensure_ascii=False))
-        print("--- end debug dump ---")
+    dob_field = discover_dob_field(session, base_url, debug_dump=debug_dump)
 
     keys = list(API_ANIMAL_FIELDS.keys())
+    if dob_field:
+        keys = keys + [dob_field]
     rows = []
     offset = 0
     while True:
@@ -5070,13 +5111,7 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
         age_days = r.get("age_days")
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
-        # DOB: left blank in --animals-live mode. An earlier guess at the API's
-        # field name ("birth_date") turned out to be invalid — PyRAT's API
-        # rejects the whole request with 422 Unprocessable Entity if any key in
-        # 'k' isn't a real field name (it doesn't just return that field blank).
-        # Use --animals-live-debug to see one raw record's actual field names,
-        # find the correct birth-date key, and add it back to API_ANIMAL_FIELDS.
-        rec["DOB"] = None
+        rec["DOB"] = r.get(dob_field) if dob_field else None
         out.append(rec)
 
     # # Animals in cage: computed by grouping (not a per-animal API field)
