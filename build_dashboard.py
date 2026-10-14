@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.7"
+DASHBOARD_VERSION = "1.8"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -531,6 +531,65 @@ function hexWithAlpha(hex, alpha){
 }
 
 /* =========================================================
+   Rendering: Category bar (horizontal, Top-N + Other)
+   Same data prep as renderCategoryChart (sorted, capped at opts.limit
+   with the remainder folded into "Other"), but drawn as a horizontal
+   bar instead of a pie — used where a field has too many distinct
+   values for a legend to stay readable (e.g. dozens of Line/strains).
+   ========================================================= */
+function renderCategoryBar(elId, rows, field, pageId, opts){
+  opts = opts || {};
+  const mode = opts.mode || 'count';
+  const valField = opts.valField;
+  const entries = mode==='sum'
+    ? mapToSortedEntries(sumBy(rows, field, valField), opts.limit||15)
+    : mapToSortedEntries(countBy(rows, field), opts.limit||15);
+  // Reverse so the largest bar ends up at the top of the horizontal chart.
+  const ordered = entries.slice().reverse();
+  const labels = ordered.map(e=>String(e[0]));
+  const values = ordered.map(e=>e[1]);
+  const displayLabels = labels.map(l=> l.length>40 ? l.slice(0,38)+'…' : l);
+  const activeSet = (state[pageId].filters[field] && state[pageId].filters[field].type==='set')
+      ? state[pageId].filters[field].set : null;
+
+  const colors = labels.map((l,i)=>{
+    const base = PALETTE[i % PALETTE.length];
+    if(!activeSet || activeSet.size===0) return base;
+    return activeSet.has(l) ? base : hexWithAlpha(base, 0.28);
+  });
+
+  const trace = {
+    type:'bar', orientation:'h',
+    x: values, y: displayLabels,
+    customdata: labels,
+    marker:{color:colors},
+    text: values.map(String),
+    textposition:'outside',
+    textfont:{size:11, color:'#F2F2F2', family:'Segoe UI'},
+    hovertemplate:'%{customdata}: %{x}<extra></extra>',
+  };
+  const layout = {
+    margin:{l:170,r:36,t:6,b:30},
+    xaxis:{tickfont:{size:10, color:'#A7A7A7'}, gridcolor:'#2A2A2A'},
+    yaxis:{tickfont:{size:10.5, color:'#F2F2F2'}, automargin:true},
+    font:{family:'Segoe UI', color:'#F2F2F2'},
+    paper_bgcolor:'rgba(0,0,0,0)',
+    plot_bgcolor:'rgba(0,0,0,0)',
+    showlegend:false,
+  };
+  Plotly.react(elId, [trace], layout, PLOTLY_CONFIG);
+  _plotDivs.add(elId);
+  const div = document.getElementById(elId);
+  div.removeAllListeners && div.removeAllListeners('plotly_click');
+  div.on('plotly_click', (ev)=>{
+    if(!ev || !ev.points || !ev.points[0]) return;
+    const idx = ev.points[0].pointNumber;
+    const rawLabel = labels[idx];
+    toggleSetFilter(pageId, field, rawLabel);
+  });
+}
+
+/* =========================================================
    Rendering: Gauge
    ========================================================= */
 function renderGauge(elId, rows, numField, denField){
@@ -868,14 +927,13 @@ function renderAnimalsPage(){
   renderKPI('animals-kpi-animals', formatCompact(distinctCount(rows,'ID')), 'Count of ID');
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
-  renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:999});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
+  renderCategoryBar('animals-chart-strain', rows, 'Strain', pageId, {limit:15});
 
   renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
-  renderDateRangeSlicer('animals-slicer-dob', pageId, 'DOB', 'Date of birth', null, all);
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
   renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
@@ -897,14 +955,14 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('cages-chart-size', rows, 'AnimalsInCage', pageId, {limit:8});
   renderCategoryChart('cages-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:999});
+  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:15});
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderCategoryChart('cages-chart-type', rows, 'CageType', pageId, {limit:9});
   const femaleCageRows = rows.filter(r=> String(r.Sex||'').toLowerCase()==='f');
-  renderCategoryChart('cages-chart-female-strain', femaleCageRows, 'FemaleLineStrain', pageId, {limit:999});
+  renderCategoryChart('cages-chart-female-strain', femaleCageRows, 'FemaleLineStrain', pageId, {limit:15});
   const maleCageRows = rows.filter(r=> String(r.Sex||'').toLowerCase()==='m');
-  renderCategoryChart('cages-chart-male-strain', maleCageRows, 'MaleLineStrain', pageId, {limit:999});
+  renderCategoryChart('cages-chart-male-strain', maleCageRows, 'MaleLineStrain', pageId, {limit:15});
   renderCategoryChart('cages-chart-cageid', rows, 'Cage', pageId, {limit:9});
 
   renderListSlicer('cages-slicer-sex', pageId, 'Sex', 'Sex', null, all);
@@ -924,7 +982,7 @@ function renderEthicsPage(){
   renderKPI('ethics-kpi-count', formatCompact(distinctCount(rows,'Number')), 'Count of Number');
 
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
-  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:999});
+  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:15});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
   renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {limit:8});
   renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {limit:8});
@@ -961,7 +1019,7 @@ function renderTablePage(){
   renderKPI('table-kpi-license', formatCompact(distinctCount(rows,'LicenseNumber')), 'Count of Ethical approval number');
 
   renderCategoryChart('table-chart-room', rows, 'Room', pageId, {limit:9});
-  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:999});
+  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:15});
 
   renderListSlicer('table-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('table-slicer-responsible', pageId, 'Responsible', 'Responsible', 'Name', all);
@@ -1096,7 +1154,6 @@ __CSS__
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
     <div class="slicer" id="animals-slicer-license-number"></div>
-    <div class="slicer" id="animals-slicer-dob"></div>
     <div class="slicer range-slicer" id="animals-slicer-agem"></div>
     <div class="slicer range-slicer" id="animals-slicer-agew"></div>
   </div>
@@ -1110,10 +1167,6 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by sex</div>
       <div id="animals-chart-sex" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Line/strain</div>
-      <div id="animals-chart-strain" class="plot-el"></div>
     </div>
     <div class="chart-card">
       <div class="chart-title">Mice# by Room</div>
@@ -1130,6 +1183,10 @@ __CSS__
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
       <div id="animals-chart-age" class="plot-el"></div>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-title">Mice# by Line/strain (Top 15 + Other)</div>
+      <div id="animals-chart-strain" class="plot-el tall"></div>
     </div>
   </div>
 </section>
