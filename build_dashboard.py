@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.8"
+DASHBOARD_VERSION = "1.10"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -568,7 +568,18 @@ function renderCategoryBar(elId, rows, field, pageId, opts){
     textfont:{size:11, color:'#F2F2F2', family:'Segoe UI'},
     hovertemplate:'%{customdata}: %{x}<extra></extra>',
   };
+  // With no cap (opts.limit left high, e.g. to list every category instead
+  // of folding the tail into "Other"), a fixed-height box would squeeze
+  // dozens of bars into illegible slivers — so the plot (and the card
+  // holding it) grow with the bar count instead of staying fixed.
+  const rowHeight = 24;
+  const chromeHeight = 50; // margin.t + margin.b
+  const neededHeight = Math.max(300, displayLabels.length*rowHeight + chromeHeight);
+  const container = document.getElementById(elId);
+  container.style.height = neededHeight + 'px';
+
   const layout = {
+    height: neededHeight,
     margin:{l:170,r:36,t:6,b:30},
     xaxis:{tickfont:{size:10, color:'#A7A7A7'}, gridcolor:'#2A2A2A'},
     yaxis:{tickfont:{size:10.5, color:'#F2F2F2'}, automargin:true},
@@ -931,7 +942,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
-  renderCategoryBar('animals-chart-strain', rows, 'Strain', pageId, {limit:15});
+  renderCategoryBar('animals-chart-strain', rows, 'Strain', pageId, {limit:999});
 
   renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
@@ -958,12 +969,6 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:15});
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
-  renderCategoryChart('cages-chart-type', rows, 'CageType', pageId, {limit:9});
-  const femaleCageRows = rows.filter(r=> String(r.Sex||'').toLowerCase()==='f');
-  renderCategoryChart('cages-chart-female-strain', femaleCageRows, 'FemaleLineStrain', pageId, {limit:15});
-  const maleCageRows = rows.filter(r=> String(r.Sex||'').toLowerCase()==='m');
-  renderCategoryChart('cages-chart-male-strain', maleCageRows, 'MaleLineStrain', pageId, {limit:15});
-  renderCategoryChart('cages-chart-cageid', rows, 'Cage', pageId, {limit:9});
 
   renderListSlicer('cages-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('cages-slicer-cage-label', pageId, 'CageLabel', 'Cage label', null, all);
@@ -984,8 +989,8 @@ function renderEthicsPage(){
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
   renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:15});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
-  renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {limit:8});
-  renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {limit:8});
+  renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {mode:'sum', valField:'Total', limit:8});
+  renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {mode:'sum', valField:'Total', limit:8});
 
   renderListSlicer('ethics-slicer-title', pageId, 'Title', 'Ethical approval', 'Title', all);
   renderListSlicer('ethics-slicer-number', pageId, 'Number', 'Ethical approval', 'Number', all);
@@ -1185,7 +1190,7 @@ __CSS__
       <div id="animals-chart-age" class="plot-el"></div>
     </div>
     <div class="chart-card full">
-      <div class="chart-title">Mice# by Line/strain (Top 15 + Other)</div>
+      <div class="chart-title">Mice# by Line/strain</div>
       <div id="animals-chart-strain" class="plot-el tall"></div>
     </div>
   </div>
@@ -1236,22 +1241,6 @@ __CSS__
       <div class="chart-title">Mice# by Responsible</div>
       <div id="cages-chart-responsible" class="plot-el"></div>
     </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Cage type</div>
-      <div id="cages-chart-type" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Female mice# by Line/strain</div>
-      <div id="cages-chart-female-strain" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Male mice# by Line/strain</div>
-      <div id="cages-chart-male-strain" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Cage ID</div>
-      <div id="cages-chart-cageid" class="plot-el"></div>
-    </div>
   </div>
 </section>
 
@@ -1291,11 +1280,11 @@ __CSS__
       <div id="ethics-chart-used-avail" class="plot-el tall"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Ethical approval by number</div>
+      <div class="chart-title">Mice# by Ethical approval number</div>
       <div id="ethics-chart-number-pie" class="plot-el"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Ethical approval by title</div>
+      <div class="chart-title">Mice# by Ethical approval title</div>
       <div id="ethics-chart-title-pie" class="plot-el"></div>
     </div>
   </div>
