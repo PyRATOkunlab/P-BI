@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.11"
+DASHBOARD_VERSION = "1.12"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -192,6 +192,12 @@ body{
   background:var(--surface); color:var(--ink);
 }
 .table-count{ font-size:12px; color:var(--ink-soft); }
+.sort-ctl{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); }
+.sort-ctl select, .sort-dir{
+  border:1px solid var(--border); border-radius:4px; padding:7px 10px; font-size:12.5px;
+  font-family:'Segoe UI',sans-serif; background:var(--surface); color:var(--ink); cursor:pointer;
+}
+.sort-dir:hover{ background:#222222; }
 .data-table-wrap{
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
   box-shadow:var(--shadow); overflow:auto; max-height:520px;
@@ -953,7 +959,6 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
-  renderCategoryChart('animals-chart-cageid', rows, 'Cage', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
   renderCategoryBar('animals-chart-strain', rows, 'Strain', pageId, {limit:999});
 
@@ -1040,6 +1045,7 @@ function renderTablePage(){
   renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:15, minLabelValue:30});
 
   renderListSlicer('table-slicer-sex', pageId, 'Sex', 'Sex', null, all);
+  renderListSlicer('table-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
   renderListSlicer('table-slicer-responsible', pageId, 'Responsible', 'Responsible', 'Name', all);
   renderListSlicer('table-slicer-title', pageId, 'LicenseTitle', 'Ethical approval', 'Title', all);
   renderListSlicer('table-slicer-license', pageId, 'LicenseNumber', 'Ethical approval', 'Number', all);
@@ -1065,6 +1071,12 @@ function renderTablePage(){
   }
 
   document.getElementById('table-count').textContent = `${rows.length.toLocaleString()} records`;
+  const sortSel = document.getElementById('table-sort-field');
+  if(!sortSel.options.length){
+    sortSel.innerHTML = '<option value="">(none)</option>' + TABLE_COLUMNS.map(c=>`<option value="${c.key}">${c.label}</option>`).join('');
+  }
+  sortSel.value = state.table.sortField || '';
+  document.getElementById('table-sort-dir').textContent = state.table.sortDir===1 ? '▲ Asc' : '▼ Desc';
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   if(state.table.page > totalPages) state.table.page = totalPages;
@@ -1116,6 +1128,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('ethics-clear').addEventListener('click', ()=>clearAllFilters('ethics'));
   document.getElementById('table-clear').addEventListener('click', ()=>clearAllFilters('table'));
 
+  document.getElementById('table-sort-field').addEventListener('change', (e)=>{
+    state.table.sortField = e.target.value || null;
+    state.table.page = 1;
+    renderTablePage();
+  });
+  document.getElementById('table-sort-dir').addEventListener('click', ()=>{
+    state.table.sortDir *= -1;
+    renderTablePage();
+  });
   document.getElementById('table-search').addEventListener('input', (e)=>{
     state.table.search = e.target.value;
     state.table.page = 1;
@@ -1197,10 +1218,6 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Responsible</div>
       <div id="animals-chart-responsible" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">#Cage ID by mice</div>
-      <div id="animals-chart-cageid" class="plot-el"></div>
     </div>
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
@@ -1317,6 +1334,7 @@ __CSS__
 
   <div class="slicer-rail">
     <div class="slicer" id="table-slicer-sex"></div>
+    <div class="slicer" id="table-slicer-strain"></div>
     <div class="slicer" id="table-slicer-title"></div>
     <div class="slicer" id="table-slicer-license"></div>
     <div class="slicer" id="table-slicer-responsible"></div>
@@ -1341,6 +1359,10 @@ __CSS__
 
   <div class="table-tools">
     <input class="table-search" id="table-search" placeholder="Search table...">
+    <label class="sort-ctl">Sort by
+      <select id="table-sort-field"></select>
+    </label>
+    <button class="sort-dir" id="table-sort-dir" title="Toggle ascending / descending">▲ Asc</button>
     <div class="table-count" id="table-count"></div>
   </div>
   <div class="data-table-wrap">
