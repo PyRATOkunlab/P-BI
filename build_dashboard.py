@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.5"
+DASHBOARD_VERSION = "1.7"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -772,6 +772,24 @@ function renderDateRangeSlicer(containerId, pageId, field, headingText, subText,
     const y = parseInt(String(d).slice(0,4), 10);
     return y >= 1990 && y <= 2100;
   }).sort();
+
+  // No usable dates at all (e.g. --animals-live without a resolved DOB
+  // field) means there is nothing to build a picker around: a blank
+  // native <input type="date"> with no min/max would look broken and
+  // filter out every row the moment anything is typed into it. Say so
+  // plainly instead, so this is diagnosable straight from the dashboard
+  // without needing to dig through the build logs.
+  if(dates.length===0){
+    container.innerHTML = `
+      <div class="date-slicer">
+        <div class="slicer-heading">${headingText}</div>
+        <div class="slicer-sub">No ${String(headingText).toLowerCase()} data in this dataset</div>
+      </div>
+    `;
+    delete state[pageId].filters[field];
+    return;
+  }
+
   const fullMin = dates[0], fullMax = dates[dates.length-1];
 
   const spec = state[pageId].filters[field];
@@ -850,7 +868,7 @@ function renderAnimalsPage(){
   renderKPI('animals-kpi-animals', formatCompact(distinctCount(rows,'ID')), 'Count of ID');
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
-  renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
+  renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:999});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
@@ -879,9 +897,15 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('cages-chart-size', rows, 'AnimalsInCage', pageId, {limit:8});
   renderCategoryChart('cages-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:9});
+  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:999});
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
+  renderCategoryChart('cages-chart-type', rows, 'CageType', pageId, {limit:9});
+  const femaleCageRows = rows.filter(r=> String(r.Sex||'').toLowerCase()==='f');
+  renderCategoryChart('cages-chart-female-strain', femaleCageRows, 'FemaleLineStrain', pageId, {limit:999});
+  const maleCageRows = rows.filter(r=> String(r.Sex||'').toLowerCase()==='m');
+  renderCategoryChart('cages-chart-male-strain', maleCageRows, 'MaleLineStrain', pageId, {limit:999});
+  renderCategoryChart('cages-chart-cageid', rows, 'Cage', pageId, {limit:9});
 
   renderListSlicer('cages-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('cages-slicer-cage-label', pageId, 'CageLabel', 'Cage label', null, all);
@@ -900,7 +924,7 @@ function renderEthicsPage(){
   renderKPI('ethics-kpi-count', formatCompact(distinctCount(rows,'Number')), 'Count of Number');
 
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
-  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:8});
+  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:999});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
   renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {limit:8});
   renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {limit:8});
@@ -937,7 +961,7 @@ function renderTablePage(){
   renderKPI('table-kpi-license', formatCompact(distinctCount(rows,'LicenseNumber')), 'Count of Ethical approval number');
 
   renderCategoryChart('table-chart-room', rows, 'Room', pageId, {limit:9});
-  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:9});
+  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:999});
 
   renderListSlicer('table-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('table-slicer-responsible', pageId, 'Responsible', 'Responsible', 'Name', all);
@@ -1154,6 +1178,22 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Responsible</div>
       <div id="cages-chart-responsible" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Cage type</div>
+      <div id="cages-chart-type" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Female mice# by Line/strain</div>
+      <div id="cages-chart-female-strain" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Male mice# by Line/strain</div>
+      <div id="cages-chart-male-strain" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Cage ID</div>
+      <div id="cages-chart-cageid" class="plot-el"></div>
     </div>
   </div>
 </section>
@@ -4879,6 +4919,9 @@ ANIMAL_ALIASES = {
     'LicenseTitle':  ['License title', 'כותרת רישיון'],
     'CageLabel':     ['Cage label', 'תווית עכברה'],
     'AnimalsInCage': ['# Animals in cage', '# חיות בעכברה'],
+    'CageType':          ['Cage - Cage type', 'Cage type', 'סוג עכברה'],
+    'FemaleLineStrain':  ['Cage - Female Line / Strain', 'Female Line / Strain'],
+    'MaleLineStrain':    ['Cage - Male Line / Strain', 'Male Line / Strain'],
 }
 
 LICENSE_ALIASES = {
@@ -5112,6 +5155,15 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
         rec["DOB"] = r.get(dob_field) if dob_field else None
+        # Cage type / per-cage Male & Female Line-Strain: these come from the
+        # "Cage - ..." merged columns in the manual Excel export, which has no
+        # confirmed equivalent field name in the live API. Rather than guess
+        # one (the "birth_date" mistake above is exactly why), leave these
+        # blank in --animals-live mode until a real field name is confirmed
+        # (e.g. via --animals-live-debug).
+        rec["CageType"] = None
+        rec["FemaleLineStrain"] = None
+        rec["MaleLineStrain"] = None
         out.append(rec)
 
     # # Animals in cage: computed by grouping (not a per-animal API field)
