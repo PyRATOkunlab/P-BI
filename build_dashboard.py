@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.10"
+DASHBOARD_VERSION = "1.11"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -489,6 +489,17 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     return activeSet.has(l) ? base : hexWithAlpha(base, 0.28);
   });
 
+  // opts.minLabelValue: hide the on-slice number for small slices (reduces
+  // clutter on crowded pies like Line/strain), but still show it once that
+  // slice is actively selected (clicked / in the filter's active set) so
+  // the number is a click away rather than gone for good.
+  const hasLabelThreshold = typeof opts.minLabelValue === 'number';
+  const sliceText = values.map((v,i)=>{
+    if(!hasLabelThreshold) return String(v);
+    const isActive = activeSet && activeSet.size>0 && activeSet.has(labels[i]);
+    return (v>=opts.minLabelValue || isActive) ? String(v) : '';
+  });
+
   const trace = {
     type:'pie',
     labels: displayLabels, values,
@@ -496,7 +507,8 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     hole,
     domain:{x:[0.255,0.745], y:[0.255,0.745]},
     marker:{colors, line:{color:'#0E0E0E', width:1.5}},
-    textinfo:'value',
+    text: sliceText,
+    textinfo: hasLabelThreshold ? 'text' : 'value',
     textposition:'outside',
     textfont:{size:12.7, color:'#F2F2F2', family:'Segoe UI'},
     automargin:true,
@@ -941,6 +953,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
+  renderCategoryChart('animals-chart-cageid', rows, 'Cage', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
   renderCategoryBar('animals-chart-strain', rows, 'Strain', pageId, {limit:999});
 
@@ -966,7 +979,7 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('cages-chart-size', rows, 'AnimalsInCage', pageId, {limit:8});
   renderCategoryChart('cages-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:15});
+  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:15, minLabelValue:30});
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
 
@@ -987,7 +1000,7 @@ function renderEthicsPage(){
   renderKPI('ethics-kpi-count', formatCompact(distinctCount(rows,'Number')), 'Count of Number');
 
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
-  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:15});
+  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:15, minLabelValue:30});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
   renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {mode:'sum', valField:'Total', limit:8});
   renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {mode:'sum', valField:'Total', limit:8});
@@ -1024,7 +1037,7 @@ function renderTablePage(){
   renderKPI('table-kpi-license', formatCompact(distinctCount(rows,'LicenseNumber')), 'Count of Ethical approval number');
 
   renderCategoryChart('table-chart-room', rows, 'Room', pageId, {limit:9});
-  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:15});
+  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:15, minLabelValue:30});
 
   renderListSlicer('table-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderListSlicer('table-slicer-responsible', pageId, 'Responsible', 'Responsible', 'Name', all);
@@ -1184,6 +1197,10 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Responsible</div>
       <div id="animals-chart-responsible" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">#Cage ID by mice</div>
+      <div id="animals-chart-cageid" class="plot-el"></div>
     </div>
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
