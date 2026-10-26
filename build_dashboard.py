@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.12"
+DASHBOARD_VERSION = "1.7"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -184,6 +184,8 @@ body{
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
 
+.missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
+
 /* ---------- Table page ---------- */
 .table-tools{ display:flex; gap:10px; align-items:center; margin-bottom:10px; }
 .table-search{
@@ -192,12 +194,6 @@ body{
   background:var(--surface); color:var(--ink);
 }
 .table-count{ font-size:12px; color:var(--ink-soft); }
-.sort-ctl{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); }
-.sort-ctl select, .sort-dir{
-  border:1px solid var(--border); border-radius:4px; padding:7px 10px; font-size:12.5px;
-  font-family:'Segoe UI',sans-serif; background:var(--surface); color:var(--ink); cursor:pointer;
-}
-.sort-dir:hover{ background:#222222; }
 .data-table-wrap{
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
   box-shadow:var(--shadow); overflow:auto; max-height:520px;
@@ -495,17 +491,6 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     return activeSet.has(l) ? base : hexWithAlpha(base, 0.28);
   });
 
-  // opts.minLabelValue: hide the on-slice number for small slices (reduces
-  // clutter on crowded pies like Line/strain), but still show it once that
-  // slice is actively selected (clicked / in the filter's active set) so
-  // the number is a click away rather than gone for good.
-  const hasLabelThreshold = typeof opts.minLabelValue === 'number';
-  const sliceText = values.map((v,i)=>{
-    if(!hasLabelThreshold) return String(v);
-    const isActive = activeSet && activeSet.size>0 && activeSet.has(labels[i]);
-    return (v>=opts.minLabelValue || isActive) ? String(v) : '';
-  });
-
   const trace = {
     type:'pie',
     labels: displayLabels, values,
@@ -513,8 +498,7 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     hole,
     domain:{x:[0.255,0.745], y:[0.255,0.745]},
     marker:{colors, line:{color:'#0E0E0E', width:1.5}},
-    text: sliceText,
-    textinfo: hasLabelThreshold ? 'text' : 'value',
+    textinfo:'value',
     textposition:'outside',
     textfont:{size:12.7, color:'#F2F2F2', family:'Segoe UI'},
     automargin:true,
@@ -549,78 +533,19 @@ function hexWithAlpha(hex, alpha){
 }
 
 /* =========================================================
-   Rendering: Category bar (horizontal, Top-N + Other)
-   Same data prep as renderCategoryChart (sorted, capped at opts.limit
-   with the remainder folded into "Other"), but drawn as a horizontal
-   bar instead of a pie — used where a field has too many distinct
-   values for a legend to stay readable (e.g. dozens of Line/strains).
-   ========================================================= */
-function renderCategoryBar(elId, rows, field, pageId, opts){
-  opts = opts || {};
-  const mode = opts.mode || 'count';
-  const valField = opts.valField;
-  const entries = mode==='sum'
-    ? mapToSortedEntries(sumBy(rows, field, valField), opts.limit||15)
-    : mapToSortedEntries(countBy(rows, field), opts.limit||15);
-  // Reverse so the largest bar ends up at the top of the horizontal chart.
-  const ordered = entries.slice().reverse();
-  const labels = ordered.map(e=>String(e[0]));
-  const values = ordered.map(e=>e[1]);
-  const displayLabels = labels.map(l=> l.length>40 ? l.slice(0,38)+'…' : l);
-  const activeSet = (state[pageId].filters[field] && state[pageId].filters[field].type==='set')
-      ? state[pageId].filters[field].set : null;
-
-  const colors = labels.map((l,i)=>{
-    const base = PALETTE[i % PALETTE.length];
-    if(!activeSet || activeSet.size===0) return base;
-    return activeSet.has(l) ? base : hexWithAlpha(base, 0.28);
-  });
-
-  const trace = {
-    type:'bar', orientation:'h',
-    x: values, y: displayLabels,
-    customdata: labels,
-    marker:{color:colors},
-    text: values.map(String),
-    textposition:'outside',
-    textfont:{size:11, color:'#F2F2F2', family:'Segoe UI'},
-    hovertemplate:'%{customdata}: %{x}<extra></extra>',
-  };
-  // With no cap (opts.limit left high, e.g. to list every category instead
-  // of folding the tail into "Other"), a fixed-height box would squeeze
-  // dozens of bars into illegible slivers — so the plot (and the card
-  // holding it) grow with the bar count instead of staying fixed.
-  const rowHeight = 24;
-  const chromeHeight = 50; // margin.t + margin.b
-  const neededHeight = Math.max(300, displayLabels.length*rowHeight + chromeHeight);
-  const container = document.getElementById(elId);
-  container.style.height = neededHeight + 'px';
-
-  const layout = {
-    height: neededHeight,
-    margin:{l:170,r:36,t:6,b:30},
-    xaxis:{tickfont:{size:10, color:'#A7A7A7'}, gridcolor:'#2A2A2A'},
-    yaxis:{tickfont:{size:10.5, color:'#F2F2F2'}, automargin:true},
-    font:{family:'Segoe UI', color:'#F2F2F2'},
-    paper_bgcolor:'rgba(0,0,0,0)',
-    plot_bgcolor:'rgba(0,0,0,0)',
-    showlegend:false,
-  };
-  Plotly.react(elId, [trace], layout, PLOTLY_CONFIG);
-  _plotDivs.add(elId);
-  const div = document.getElementById(elId);
-  div.removeAllListeners && div.removeAllListeners('plotly_click');
-  div.on('plotly_click', (ev)=>{
-    if(!ev || !ev.points || !ev.points[0]) return;
-    const idx = ev.points[0].pointNumber;
-    const rawLabel = labels[idx];
-    toggleSetFilter(pageId, field, rawLabel);
-  });
-}
-
-/* =========================================================
    Rendering: Gauge
    ========================================================= */
+function renderOptionalMutationChart(elId, rows, field, pageId){
+  const usable = rows.filter(r=>r[field]!==null && r[field]!==undefined && String(r[field]).trim()!=='');
+  if(!usable.length){
+    const el=document.getElementById(elId);
+    Plotly.purge(el);
+    el.innerHTML='<div class="missing-data">No '+(field==='Mutations'?'mutation':'mutation type')+' values available in this animal dataset or selection. Check the PyRAT animal export / API fields.</div>';
+    return;
+  }
+  renderCategoryChart(elId, usable, field, pageId, {limit:9});
+}
+
 function renderGauge(elId, rows, numField, denField){
   const used = sumField(rows, numField);
   const total = sumField(rows, denField);
@@ -860,24 +785,6 @@ function renderDateRangeSlicer(containerId, pageId, field, headingText, subText,
     const y = parseInt(String(d).slice(0,4), 10);
     return y >= 1990 && y <= 2100;
   }).sort();
-
-  // No usable dates at all (e.g. --animals-live without a resolved DOB
-  // field) means there is nothing to build a picker around: a blank
-  // native <input type="date"> with no min/max would look broken and
-  // filter out every row the moment anything is typed into it. Say so
-  // plainly instead, so this is diagnosable straight from the dashboard
-  // without needing to dig through the build logs.
-  if(dates.length===0){
-    container.innerHTML = `
-      <div class="date-slicer">
-        <div class="slicer-heading">${headingText}</div>
-        <div class="slicer-sub">No ${String(headingText).toLowerCase()} data in this dataset</div>
-      </div>
-    `;
-    delete state[pageId].filters[field];
-    return;
-  }
-
   const fullMin = dates[0], fullMax = dates[dates.length-1];
 
   const spec = state[pageId].filters[field];
@@ -956,19 +863,24 @@ function renderAnimalsPage(){
   renderKPI('animals-kpi-animals', formatCompact(distinctCount(rows,'ID')), 'Count of ID');
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
+  renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
+  renderOptionalMutationChart('animals-chart-mutations', rows, 'Mutations', pageId);
+  renderOptionalMutationChart('animals-chart-mutationtype', rows, 'MutationType', pageId);
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
-  renderCategoryBar('animals-chart-strain', rows, 'Strain', pageId, {limit:999});
 
   renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
+  renderDateRangeSlicer('animals-slicer-dob', pageId, 'DOB', 'Date of birth', null, all);
   renderRangeSlicer('animals-slicer-agem', pageId, 'AgeM', 'Age in month', all);
   renderRangeSlicer('animals-slicer-agew', pageId, 'AgeW', 'Age in week', all);
   renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
   renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
+  renderListSlicer('animals-slicer-mutations', pageId, 'Mutations', 'Mutations', null, all);
+  renderListSlicer('animals-slicer-mutationtype', pageId, 'MutationType', 'Mutation type', null, all);
 
   renderActiveFilterPills(pageId);
 }
@@ -984,7 +896,7 @@ function renderCagesPage(){
   renderCategoryChart('cages-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('cages-chart-size', rows, 'AnimalsInCage', pageId, {limit:8});
   renderCategoryChart('cages-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:15, minLabelValue:30});
+  renderCategoryChart('cages-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderCategoryChart('cages-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('cages-chart-responsible', rows, 'Responsible', pageId, {limit:9});
 
@@ -1005,10 +917,10 @@ function renderEthicsPage(){
   renderKPI('ethics-kpi-count', formatCompact(distinctCount(rows,'Number')), 'Count of Number');
 
   renderGauge('ethics-gauge', rows, 'Used', 'Total');
-  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:15, minLabelValue:30});
+  renderCategoryChart('ethics-chart-strains', rows, 'LinesStrains', pageId, {mode:'sum', valField:'Total', limit:8});
   renderGroupedBar('ethics-chart-used-avail', rows, 'Number', ['Used','Available'], ['Sum of Used','Sum of Available'], pageId);
-  renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {mode:'sum', valField:'Total', limit:8});
-  renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {mode:'sum', valField:'Total', limit:8});
+  renderCategoryChart('ethics-chart-number-pie', rows, 'Number', pageId, {limit:8});
+  renderCategoryChart('ethics-chart-title-pie', rows, 'Title', pageId, {limit:8});
 
   renderListSlicer('ethics-slicer-title', pageId, 'Title', 'Ethical approval', 'Title', all);
   renderListSlicer('ethics-slicer-number', pageId, 'Number', 'Ethical approval', 'Number', all);
@@ -1042,10 +954,9 @@ function renderTablePage(){
   renderKPI('table-kpi-license', formatCompact(distinctCount(rows,'LicenseNumber')), 'Count of Ethical approval number');
 
   renderCategoryChart('table-chart-room', rows, 'Room', pageId, {limit:9});
-  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:15, minLabelValue:30});
+  renderCategoryChart('table-chart-strain', rows, 'Strain', pageId, {limit:9});
 
   renderListSlicer('table-slicer-sex', pageId, 'Sex', 'Sex', null, all);
-  renderListSlicer('table-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
   renderListSlicer('table-slicer-responsible', pageId, 'Responsible', 'Responsible', 'Name', all);
   renderListSlicer('table-slicer-title', pageId, 'LicenseTitle', 'Ethical approval', 'Title', all);
   renderListSlicer('table-slicer-license', pageId, 'LicenseNumber', 'Ethical approval', 'Number', all);
@@ -1071,12 +982,6 @@ function renderTablePage(){
   }
 
   document.getElementById('table-count').textContent = `${rows.length.toLocaleString()} records`;
-  const sortSel = document.getElementById('table-sort-field');
-  if(!sortSel.options.length){
-    sortSel.innerHTML = '<option value="">(none)</option>' + TABLE_COLUMNS.map(c=>`<option value="${c.key}">${c.label}</option>`).join('');
-  }
-  sortSel.value = state.table.sortField || '';
-  document.getElementById('table-sort-dir').textContent = state.table.sortDir===1 ? '▲ Asc' : '▼ Desc';
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   if(state.table.page > totalPages) state.table.page = totalPages;
@@ -1128,15 +1033,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('ethics-clear').addEventListener('click', ()=>clearAllFilters('ethics'));
   document.getElementById('table-clear').addEventListener('click', ()=>clearAllFilters('table'));
 
-  document.getElementById('table-sort-field').addEventListener('change', (e)=>{
-    state.table.sortField = e.target.value || null;
-    state.table.page = 1;
-    renderTablePage();
-  });
-  document.getElementById('table-sort-dir').addEventListener('click', ()=>{
-    state.table.sortDir *= -1;
-    renderTablePage();
-  });
   document.getElementById('table-search').addEventListener('input', (e)=>{
     state.table.search = e.target.value;
     state.table.page = 1;
@@ -1190,9 +1086,12 @@ __CSS__
   <div class="slicer-rail">
     <div class="slicer" id="animals-slicer-sex"></div>
     <div class="slicer" id="animals-slicer-strain"></div>
+    <div class="slicer" id="animals-slicer-mutations"></div>
+    <div class="slicer" id="animals-slicer-mutationtype"></div>
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
     <div class="slicer" id="animals-slicer-license-number"></div>
+    <div class="slicer" id="animals-slicer-dob"></div>
     <div class="slicer range-slicer" id="animals-slicer-agem"></div>
     <div class="slicer range-slicer" id="animals-slicer-agew"></div>
   </div>
@@ -1206,6 +1105,18 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by sex</div>
       <div id="animals-chart-sex" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Line/strain</div>
+      <div id="animals-chart-strain" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Mutations</div>
+      <div id="animals-chart-mutations" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Mutation Type</div>
+      <div id="animals-chart-mutationtype" class="plot-el"></div>
     </div>
     <div class="chart-card">
       <div class="chart-title">Mice# by Room</div>
@@ -1222,10 +1133,6 @@ __CSS__
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
       <div id="animals-chart-age" class="plot-el"></div>
-    </div>
-    <div class="chart-card full">
-      <div class="chart-title">Mice# by Line/strain</div>
-      <div id="animals-chart-strain" class="plot-el tall"></div>
     </div>
   </div>
 </section>
@@ -1314,11 +1221,11 @@ __CSS__
       <div id="ethics-chart-used-avail" class="plot-el tall"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Ethical approval number</div>
+      <div class="chart-title">Ethical approval by number</div>
       <div id="ethics-chart-number-pie" class="plot-el"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Ethical approval title</div>
+      <div class="chart-title">Ethical approval by title</div>
       <div id="ethics-chart-title-pie" class="plot-el"></div>
     </div>
   </div>
@@ -1334,7 +1241,6 @@ __CSS__
 
   <div class="slicer-rail">
     <div class="slicer" id="table-slicer-sex"></div>
-    <div class="slicer" id="table-slicer-strain"></div>
     <div class="slicer" id="table-slicer-title"></div>
     <div class="slicer" id="table-slicer-license"></div>
     <div class="slicer" id="table-slicer-responsible"></div>
@@ -1359,10 +1265,6 @@ __CSS__
 
   <div class="table-tools">
     <input class="table-search" id="table-search" placeholder="Search table...">
-    <label class="sort-ctl">Sort by
-      <select id="table-sort-field"></select>
-    </label>
-    <button class="sort-dir" id="table-sort-dir" title="Toggle ascending / descending">▲ Asc</button>
     <div class="table-count" id="table-count"></div>
   </div>
   <div class="data-table-wrap">
@@ -5004,10 +4906,45 @@ ANIMAL_ALIASES = {
     'LicenseTitle':  ['License title', 'כותרת רישיון'],
     'CageLabel':     ['Cage label', 'תווית עכברה'],
     'AnimalsInCage': ['# Animals in cage', '# חיות בעכברה'],
-    'CageType':          ['Cage - Cage type', 'Cage type', 'סוג עכברה'],
-    'FemaleLineStrain':  ['Cage - Female Line / Strain', 'Female Line / Strain'],
-    'MaleLineStrain':    ['Cage - Male Line / Strain', 'Male Line / Strain'],
 }
+
+# Optional animal-level columns from PyRAT. Licenses remain manually imported.
+MUTATION_NAMES = ['Mutations', 'Mutation', 'מוטציות', 'מוטציה']
+MUTATION_AND_TYPE_NAMES = ['Mutations and type', 'Mutations and Type', 'Mutation and type',
+                           'Mutations & type', 'Mutations & Type', 'מוטציות וסוג']
+MUTATION_TYPE_NAMES = ['Mutation type', 'Mutation Type', 'Type of mutation', 'סוג מוטציה']
+
+def mutation_values(mutation, combined, explicit_type=None):
+    """Respect two distinct PyRAT columns; don't guess from strain or genotype."""
+    def norm(v):
+        if v is None: return None
+        if isinstance(v, (dict, list)):
+            return json.dumps(v, ensure_ascii=False) if v else None
+        v=str(v).strip()
+        return v if v and v.lower() not in ('nan','none','null') else None
+    mutation, combined, explicit_type=map(norm, (mutation,combined,explicit_type))
+    if not mutation and combined:
+        # A combined value alone cannot reliably distinguish mutation vs type.
+        return combined, explicit_type
+    if explicit_type:
+        return mutation, explicit_type
+    if not combined or not mutation:
+        return mutation, None
+    # PyRAT shows e.g. 'Cre +/- Knockin' and 'Cre +/-' in separate columns.
+    # Remove the exact mutation/genotype prefix to obtain the annotated type.
+    if combined.casefold().startswith(mutation.casefold()):
+        leftover=combined[len(mutation):].strip(' ,;–—-|:')
+        return mutation, leftover or None
+    return mutation, None
+
+def optional_animal_columns(df):
+    names={str(c).strip().casefold():c for c in df.columns}
+    def col(aliases):
+        key=next((names[a.casefold()] for a in aliases if a.casefold() in names),None)
+        return df[key].tolist() if key is not None else [None]*len(df)
+    muts, combined, types=col(MUTATION_NAMES),col(MUTATION_AND_TYPE_NAMES),col(MUTATION_TYPE_NAMES)
+    vals=[mutation_values(clean_val(a),clean_val(b),clean_val(c)) for a,b,c in zip(muts,combined,types)]
+    return [x[0] for x in vals],[x[1] for x in vals]
 
 LICENSE_ALIASES = {
     'Number':          ['Number', 'מספר'],
@@ -5233,22 +5170,44 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
             break
         offset += page_size
 
+    # Probe a sample of the unfiltered endpoint: requesting speculative keys in
+    # PyRAT's `k` filter can cause HTTP 422. Only query the full records if the
+    # server actually exposes mutation fields (not guaranteed by the web UI).
+    extra_by_id = {}
+    try:
+        probe = session.get(f"{base_url}/animals", params={"l": 1, "o": 0, "state": "live"}, timeout=25)
+        probe.raise_for_status()
+        sample = probe.json()
+        sample = sample[0] if isinstance(sample,list) and sample else {}
+        names = {str(k).casefold() for k in sample} if isinstance(sample,dict) else set()
+        wanted = [*MUTATION_NAMES,*MUTATION_AND_TYPE_NAMES,*MUTATION_TYPE_NAMES,
+                  'mutation', 'mutations', 'mutation_type', 'mutations_and_type', 'mutation_and_type']
+        if any(n.casefold() in names for n in wanted):
+            for pos in range(0,len(rows),page_size):
+                response=session.get(f"{base_url}/animals", params={"l":page_size,"o":pos,"state":"live"}, timeout=60)
+                response.raise_for_status()
+                for item in response.json():
+                    extra_by_id[str(item.get('eartag_or_id'))] = item
+        else:
+            print('Note: Live PyRAT animal API did not expose mutation fields. Charts will show unavailable data.')
+    except Exception as exc:
+        print(f'Note: Could not check unfiltered mutation fields ({exc}); other animal data is unaffected.')
+    def field(record, names):
+        indexed={str(k).casefold():v for k,v in record.items()}
+        return next((indexed[n.casefold()] for n in names if n.casefold() in indexed),None)
+
     out = []
     for r in rows:
         rec = {API_ANIMAL_FIELDS[k]: r.get(k) for k in API_ANIMAL_FIELDS if k != "age_days"}
+        detail=extra_by_id.get(str(r.get('eartag_or_id')), {})
+        rec['Mutations'],rec['MutationType']=mutation_values(
+            field(detail, MUTATION_NAMES+['mutation','mutations']),
+            field(detail, MUTATION_AND_TYPE_NAMES+['mutations_and_type','mutation_and_type']),
+            field(detail, MUTATION_TYPE_NAMES+['mutation_type']))
         age_days = r.get("age_days")
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
         rec["DOB"] = r.get(dob_field) if dob_field else None
-        # Cage type / per-cage Male & Female Line-Strain: these come from the
-        # "Cage - ..." merged columns in the manual Excel export, which has no
-        # confirmed equivalent field name in the live API. Rather than guess
-        # one (the "birth_date" mistake above is exactly why), leave these
-        # blank in --animals-live mode until a real field name is confirmed
-        # (e.g. via --animals-live-debug).
-        rec["CageType"] = None
-        rec["FemaleLineStrain"] = None
-        rec["MaleLineStrain"] = None
         out.append(rec)
 
     # # Animals in cage: computed by grouping (not a per-animal API field)
@@ -5391,6 +5350,12 @@ def load_sheet(path, aliases):
               "update the *_ALIASES dict near the top of this script to add the new name."
         )
     df2 = pd.DataFrame(out_cols)
+    if aliases is ANIMAL_ALIASES:
+        df2['Mutations'], df2['MutationType'] = optional_animal_columns(df)
+        if not any(v is not None for v in df2['Mutations']):
+            print('Note: No Mutations column was found in the animal export.')
+        if not any(v is not None for v in df2['MutationType']):
+            print('Note: Mutation type is unavailable or not separable from the available columns.')
     return [{k: clean_val(v) for k, v in row.items()} for _, row in df2.iterrows()]
 
 def main():
