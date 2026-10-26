@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.7"
+DASHBOARD_VERSION = "1.5"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -183,8 +183,6 @@ body{
 .chart-title{ font-size:16.8px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
-
-.missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
 
 /* ---------- Table page ---------- */
 .table-tools{ display:flex; gap:10px; align-items:center; margin-bottom:10px; }
@@ -535,17 +533,6 @@ function hexWithAlpha(hex, alpha){
 /* =========================================================
    Rendering: Gauge
    ========================================================= */
-function renderOptionalMutationChart(elId, rows, field, pageId){
-  const usable = rows.filter(r=>r[field]!==null && r[field]!==undefined && String(r[field]).trim()!=='');
-  if(!usable.length){
-    const el=document.getElementById(elId);
-    Plotly.purge(el);
-    el.innerHTML='<div class="missing-data">No '+(field==='Mutations'?'mutation':'mutation type')+' values available in this animal dataset or selection. Check the PyRAT animal export / API fields.</div>';
-    return;
-  }
-  renderCategoryChart(elId, usable, field, pageId, {limit:9});
-}
-
 function renderGauge(elId, rows, numField, denField){
   const used = sumField(rows, numField);
   const total = sumField(rows, denField);
@@ -864,8 +851,6 @@ function renderAnimalsPage(){
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
-  renderOptionalMutationChart('animals-chart-mutations', rows, 'Mutations', pageId);
-  renderOptionalMutationChart('animals-chart-mutationtype', rows, 'MutationType', pageId);
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
@@ -879,8 +864,6 @@ function renderAnimalsPage(){
   renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
-  renderListSlicer('animals-slicer-mutations', pageId, 'Mutations', 'Mutations', null, all);
-  renderListSlicer('animals-slicer-mutationtype', pageId, 'MutationType', 'Mutation type', null, all);
 
   renderActiveFilterPills(pageId);
 }
@@ -1086,8 +1069,6 @@ __CSS__
   <div class="slicer-rail">
     <div class="slicer" id="animals-slicer-sex"></div>
     <div class="slicer" id="animals-slicer-strain"></div>
-    <div class="slicer" id="animals-slicer-mutations"></div>
-    <div class="slicer" id="animals-slicer-mutationtype"></div>
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
     <div class="slicer" id="animals-slicer-license-number"></div>
@@ -1109,14 +1090,6 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Line/strain</div>
       <div id="animals-chart-strain" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Mutations</div>
-      <div id="animals-chart-mutations" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Mutation Type</div>
-      <div id="animals-chart-mutationtype" class="plot-el"></div>
     </div>
     <div class="chart-card">
       <div class="chart-title">Mice# by Room</div>
@@ -4908,44 +4881,6 @@ ANIMAL_ALIASES = {
     'AnimalsInCage': ['# Animals in cage', '# חיות בעכברה'],
 }
 
-# Optional animal-level columns from PyRAT. Licenses remain manually imported.
-MUTATION_NAMES = ['Mutations', 'Mutation', 'מוטציות', 'מוטציה']
-MUTATION_AND_TYPE_NAMES = ['Mutations and type', 'Mutations and Type', 'Mutation and type',
-                           'Mutations & type', 'Mutations & Type', 'מוטציות וסוג']
-MUTATION_TYPE_NAMES = ['Mutation type', 'Mutation Type', 'Type of mutation', 'סוג מוטציה']
-
-def mutation_values(mutation, combined, explicit_type=None):
-    """Respect two distinct PyRAT columns; don't guess from strain or genotype."""
-    def norm(v):
-        if v is None: return None
-        if isinstance(v, (dict, list)):
-            return json.dumps(v, ensure_ascii=False) if v else None
-        v=str(v).strip()
-        return v if v and v.lower() not in ('nan','none','null') else None
-    mutation, combined, explicit_type=map(norm, (mutation,combined,explicit_type))
-    if not mutation and combined:
-        # A combined value alone cannot reliably distinguish mutation vs type.
-        return combined, explicit_type
-    if explicit_type:
-        return mutation, explicit_type
-    if not combined or not mutation:
-        return mutation, None
-    # PyRAT shows e.g. 'Cre +/- Knockin' and 'Cre +/-' in separate columns.
-    # Remove the exact mutation/genotype prefix to obtain the annotated type.
-    if combined.casefold().startswith(mutation.casefold()):
-        leftover=combined[len(mutation):].strip(' ,;–—-|:')
-        return mutation, leftover or None
-    return mutation, None
-
-def optional_animal_columns(df):
-    names={str(c).strip().casefold():c for c in df.columns}
-    def col(aliases):
-        key=next((names[a.casefold()] for a in aliases if a.casefold() in names),None)
-        return df[key].tolist() if key is not None else [None]*len(df)
-    muts, combined, types=col(MUTATION_NAMES),col(MUTATION_AND_TYPE_NAMES),col(MUTATION_TYPE_NAMES)
-    vals=[mutation_values(clean_val(a),clean_val(b),clean_val(c)) for a,b,c in zip(muts,combined,types)]
-    return [x[0] for x in vals],[x[1] for x in vals]
-
 LICENSE_ALIASES = {
     'Number':          ['Number', 'מספר'],
     'Title':           ['Title', 'כותרת'],
@@ -5170,40 +5105,9 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
             break
         offset += page_size
 
-    # Probe a sample of the unfiltered endpoint: requesting speculative keys in
-    # PyRAT's `k` filter can cause HTTP 422. Only query the full records if the
-    # server actually exposes mutation fields (not guaranteed by the web UI).
-    extra_by_id = {}
-    try:
-        probe = session.get(f"{base_url}/animals", params={"l": 1, "o": 0, "state": "live"}, timeout=25)
-        probe.raise_for_status()
-        sample = probe.json()
-        sample = sample[0] if isinstance(sample,list) and sample else {}
-        names = {str(k).casefold() for k in sample} if isinstance(sample,dict) else set()
-        wanted = [*MUTATION_NAMES,*MUTATION_AND_TYPE_NAMES,*MUTATION_TYPE_NAMES,
-                  'mutation', 'mutations', 'mutation_type', 'mutations_and_type', 'mutation_and_type']
-        if any(n.casefold() in names for n in wanted):
-            for pos in range(0,len(rows),page_size):
-                response=session.get(f"{base_url}/animals", params={"l":page_size,"o":pos,"state":"live"}, timeout=60)
-                response.raise_for_status()
-                for item in response.json():
-                    extra_by_id[str(item.get('eartag_or_id'))] = item
-        else:
-            print('Note: Live PyRAT animal API did not expose mutation fields. Charts will show unavailable data.')
-    except Exception as exc:
-        print(f'Note: Could not check unfiltered mutation fields ({exc}); other animal data is unaffected.')
-    def field(record, names):
-        indexed={str(k).casefold():v for k,v in record.items()}
-        return next((indexed[n.casefold()] for n in names if n.casefold() in indexed),None)
-
     out = []
     for r in rows:
         rec = {API_ANIMAL_FIELDS[k]: r.get(k) for k in API_ANIMAL_FIELDS if k != "age_days"}
-        detail=extra_by_id.get(str(r.get('eartag_or_id')), {})
-        rec['Mutations'],rec['MutationType']=mutation_values(
-            field(detail, MUTATION_NAMES+['mutation','mutations']),
-            field(detail, MUTATION_AND_TYPE_NAMES+['mutations_and_type','mutation_and_type']),
-            field(detail, MUTATION_TYPE_NAMES+['mutation_type']))
         age_days = r.get("age_days")
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
@@ -5350,12 +5254,6 @@ def load_sheet(path, aliases):
               "update the *_ALIASES dict near the top of this script to add the new name."
         )
     df2 = pd.DataFrame(out_cols)
-    if aliases is ANIMAL_ALIASES:
-        df2['Mutations'], df2['MutationType'] = optional_animal_columns(df)
-        if not any(v is not None for v in df2['Mutations']):
-            print('Note: No Mutations column was found in the animal export.')
-        if not any(v is not None for v in df2['MutationType']):
-            print('Note: Mutation type is unavailable or not separable from the available columns.')
     return [{k: clean_val(v) for k, v in row.items()} for _, row in df2.iterrows()]
 
 def main():
