@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.5"
+DASHBOARD_VERSION = "1.8"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -184,6 +184,8 @@ body{
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
 
+.missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
+
 /* ---------- Table page ---------- */
 .table-tools{ display:flex; gap:10px; align-items:center; margin-bottom:10px; }
 .table-search{
@@ -285,15 +287,18 @@ window.addEventListener('resize', _debounce(()=>{
 // ---------- generic helpers ----------
 function uniqueValues(rows, field){
   const s = new Set();
-  rows.forEach(r=>{ if(r[field]!==null && r[field]!==undefined && r[field]!=='') s.add(r[field]); });
+  rows.forEach(r=>{ const vs = Array.isArray(r[field]) ? r[field] : [r[field]]; vs.forEach(v=>{if(v!==null && v!==undefined && v!=='') s.add(String(v));}); });
   return Array.from(s).sort((a,b)=> String(a).localeCompare(String(b)));
 }
 
 function countBy(rows, field){
   const m = new Map();
   rows.forEach(r=>{
-    const v = (r[field]===null || r[field]===undefined || r[field]==='') ? '(Blank)' : r[field];
-    m.set(v, (m.get(v)||0)+1);
+    const vals = Array.isArray(r[field]) ? [...new Set(r[field].map(String))] : [r[field]];
+    vals.forEach(raw=>{
+      const v = (raw===null || raw===undefined || raw==='') ? '(Blank)' : raw;
+      m.set(v, (m.get(v)||0)+1);
+    });
   });
   return m;
 }
@@ -533,6 +538,17 @@ function hexWithAlpha(hex, alpha){
 /* =========================================================
    Rendering: Gauge
    ========================================================= */
+function renderOptionalMutationChart(elId, rows, field, pageId){
+  const usable = rows.filter(r=>Array.isArray(r[field]) ? r[field].length>0 : (r[field]!==null && r[field]!==undefined && String(r[field]).trim()!==''));
+  if(!usable.length){
+    const el=document.getElementById(elId);
+    Plotly.purge(el);
+    el.innerHTML='<div class="missing-data">No '+(field==='Mutations'?'mutation':'mutation type')+' values available in this animal dataset or selection. Check the PyRAT animal export / API fields.</div>';
+    return;
+  }
+  renderCategoryChart(elId, usable, field, pageId, {limit:9});
+}
+
 function renderGauge(elId, rows, numField, denField){
   const used = sumField(rows, numField);
   const total = sumField(rows, denField);
@@ -851,6 +867,8 @@ function renderAnimalsPage(){
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
+  renderOptionalMutationChart('animals-chart-mutations', rows, 'Mutations', pageId);
+  renderOptionalMutationChart('animals-chart-mutationtype', rows, 'MutationType', pageId);
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
@@ -864,6 +882,8 @@ function renderAnimalsPage(){
   renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
+  renderListSlicer('animals-slicer-mutations', pageId, 'Mutations', 'Mutations', null, all);
+  renderListSlicer('animals-slicer-mutationtype', pageId, 'MutationType', 'Mutation type', null, all);
 
   renderActiveFilterPills(pageId);
 }
@@ -1069,6 +1089,8 @@ __CSS__
   <div class="slicer-rail">
     <div class="slicer" id="animals-slicer-sex"></div>
     <div class="slicer" id="animals-slicer-strain"></div>
+    <div class="slicer" id="animals-slicer-mutations"></div>
+    <div class="slicer" id="animals-slicer-mutationtype"></div>
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
     <div class="slicer" id="animals-slicer-license-number"></div>
@@ -1090,6 +1112,14 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Line/strain</div>
       <div id="animals-chart-strain" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Mutations</div>
+      <div id="animals-chart-mutations" class="plot-el"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Mice# by Mutation Type</div>
+      <div id="animals-chart-mutationtype" class="plot-el"></div>
     </div>
     <div class="chart-card">
       <div class="chart-title">Mice# by Room</div>
@@ -4881,6 +4911,55 @@ ANIMAL_ALIASES = {
     'AnimalsInCage': ['# Animals in cage', '# חיות בעכברה'],
 }
 
+# Optional animal-level columns from PyRAT. Licenses remain manually imported.
+MUTATION_NAMES = ['Mutations', 'Mutation', 'מוטציות', 'מוטציה']
+MUTATION_AND_TYPE_NAMES = ['Mutations and type', 'Mutations and Type', 'Mutation and type',
+                           'Mutations & type', 'Mutations & Type', 'מוטציות וסוג']
+MUTATION_TYPE_NAMES = ['Mutation type', 'Mutation Type', 'Type of mutation', 'סוג מוטציה']
+
+def mutation_values(mutation, combined, explicit_type=None):
+    """Respect two distinct PyRAT columns; don't guess from strain or genotype."""
+    def norm(v):
+        if v is None: return None
+        if isinstance(v, (dict, list)):
+            return json.dumps(v, ensure_ascii=False) if v else None
+        v=str(v).strip()
+        return v if v and v.lower() not in ('nan','none','null') else None
+    mutation, combined, explicit_type=map(norm, (mutation,combined,explicit_type))
+    if not mutation and combined:
+        # A combined value alone cannot reliably distinguish mutation vs type.
+        return combined, explicit_type
+    if explicit_type:
+        return mutation, explicit_type
+    if not combined or not mutation:
+        return mutation, None
+    # PyRAT shows e.g. 'Cre +/- Knockin' and 'Cre +/-' in separate columns.
+    # Remove the exact mutation/genotype prefix to obtain the annotated type.
+    if combined.casefold().startswith(mutation.casefold()):
+        leftover=combined[len(mutation):].strip(' ,;–—-|:')
+        return mutation, leftover or None
+    return mutation, None
+
+def optional_animal_columns(df):
+    names={str(c).strip().casefold():c for c in df.columns}
+    def col(aliases):
+        key=next((names[a.casefold()] for a in aliases if a.casefold() in names),None)
+        return df[key].tolist() if key is not None else [None]*len(df)
+    muts, combined, types=col(MUTATION_NAMES),col(MUTATION_AND_TYPE_NAMES),col(MUTATION_TYPE_NAMES)
+    vals=[]
+    for a,b,c in zip(muts,combined,types):
+        if isinstance(a,str) and a.strip().startswith('['):
+            try:
+                parsed=json.loads(a)
+                if isinstance(parsed,list) and all(isinstance(m,dict) for m in parsed):
+                    vals.append((list(dict.fromkeys(str(m['mutationname']) for m in parsed if m.get('mutationname'))),
+                                 list(dict.fromkeys(str(m['mutationtype']) for m in parsed if m.get('mutationtype')))))
+                    continue
+            except (ValueError,TypeError):
+                pass
+        vals.append(mutation_values(clean_val(a),clean_val(b),clean_val(c)))
+    return [x[0] for x in vals],[x[1] for x in vals]
+
 LICENSE_ALIASES = {
     'Number':          ['Number', 'מספר'],
     'Title':           ['Title', 'כותרת'],
@@ -5086,7 +5165,7 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
 
     dob_field = discover_dob_field(session, base_url, debug_dump=debug_dump)
 
-    keys = list(API_ANIMAL_FIELDS.keys())
+    keys = list(API_ANIMAL_FIELDS.keys()) + ["mutations"]
     if dob_field:
         keys = keys + [dob_field]
     rows = []
@@ -5105,9 +5184,27 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
             break
         offset += page_size
 
+    # Max confirmed /animals?k=mutations returns a list of mutation objects.
+    # It is included directly in the paginated animal query above, so no
+    # speculative unfiltered second request or fragile string matching.
+
     out = []
     for r in rows:
         rec = {API_ANIMAL_FIELDS[k]: r.get(k) for k in API_ANIMAL_FIELDS if k != "age_days"}
+        mutations = r.get("mutations") or []
+        if not isinstance(mutations, list):
+            mutations = []
+        # Preserve the complete API records, including genotypes, for future
+        # display. Deduplicate by animal (each record is one animal).
+        rec["MutationDetails"] = mutations
+        rec["Mutations"] = list(dict.fromkeys(
+            str(m.get("mutationname")).strip() for m in mutations
+            if isinstance(m, dict) and m.get("mutationname")
+        ))
+        rec["MutationType"] = list(dict.fromkeys(
+            str(m.get("mutationtype")).strip() for m in mutations
+            if isinstance(m, dict) and m.get("mutationtype")
+        ))
         age_days = r.get("age_days")
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
@@ -5120,7 +5217,7 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
     for r in out:
         r["AnimalsInCage"] = cage_counts.get(r.get("Cage"), None)
 
-    return [{k: clean_val(v) for k, v in row.items()} for row in out]
+    return [{k: (v if isinstance(v, (list, dict)) else clean_val(v)) for k, v in row.items()} for row in out]
 
 def fetch_licenses_live(base_url, client_token, user_token, page_size=100, debug_dump=False):
     """Pull licenses from the live PyRAT API.
@@ -5254,6 +5351,12 @@ def load_sheet(path, aliases):
               "update the *_ALIASES dict near the top of this script to add the new name."
         )
     df2 = pd.DataFrame(out_cols)
+    if aliases is ANIMAL_ALIASES:
+        df2['Mutations'], df2['MutationType'] = optional_animal_columns(df)
+        if not any(v is not None for v in df2['Mutations']):
+            print('Note: No Mutations column was found in the animal export.')
+        if not any(v is not None for v in df2['MutationType']):
+            print('Note: Mutation type is unavailable or not separable from the available columns.')
     return [{k: clean_val(v) for k, v in row.items()} for _, row in df2.iterrows()]
 
 def main():
