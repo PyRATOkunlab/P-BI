@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "2.0"
+DASHBOARD_VERSION = "2.1"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -868,7 +868,7 @@ function renderAnimalsPage(){
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
-  renderOptionalMutationChart('animals-chart-genotype', rows, 'MutationGrade', pageId);
+  renderOptionalMutationChart('animals-chart-genotype', rows, 'GenotypeCombination', pageId);
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
@@ -882,7 +882,7 @@ function renderAnimalsPage(){
   renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
-  renderListSlicer('animals-slicer-genotype', pageId, 'MutationGrade', 'Genotype', 'Hom, Het, WT, +/−, etc.', all);
+  renderListSlicer('animals-slicer-genotype', pageId, 'GenotypeCombination', 'Genotype combination', 'Mutation-specific Hom, Het, WT, +/−, etc.', all);
 
   renderActiveFilterPills(pageId);
 }
@@ -1112,9 +1112,9 @@ __CSS__
       <div id="animals-chart-strain" class="plot-el"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Genotype</div>
+      <div class="chart-title">Mice# by Genotype Combination Combination</div>
       <div id="animals-chart-genotype" class="plot-el"></div>
-      <div class="genotype-note">One mouse may appear in multiple genotype categories.</div>
+      <div class="genotype-note">Each mouse is counted once by its complete recorded genotype combination.</div>
     </div>
     <div class="chart-card">
       <div class="chart-title">Mice# by Responsible</div>
@@ -4914,6 +4914,26 @@ MUTATION_TYPE_NAMES = ['Mutation type', 'Mutation Type', 'Type of mutation', 'ס
 MUTATION_GRADE_NAMES = ['Mutation grade', 'Mutation Grade', 'Mutation genotype',
                         'Mutation Genotype', 'Genotype (mutation)', 'MutationGrade']
 
+def mutation_genotype_combination(mutations):
+    """One stable, mutation-specific genotype label per animal.
+
+    Never infer grades from strain names, and do not collapse two mutations
+    that have the same grade into a single generic Hom/Het label.
+    """
+    if not isinstance(mutations, list):
+        return None
+    pairs = set()
+    for m in mutations:
+        if not isinstance(m, dict):
+            continue
+        name = str(m.get('mutationname') or '').strip()
+        grade = str(m.get('mutationgrade') or '').strip()
+        if name and grade:
+            pairs.add((name, grade))
+    if not pairs:
+        return None
+    return ' + '.join(f'{name}: {grade}' for name, grade in sorted(pairs, key=lambda p:(p[0].casefold(),p[1].casefold())))
+
 def genotype_values_from_export(value):
     """Only extract grades when clearly encoded, without treating mutation classes as grades."""
     if value is None: return None
@@ -5215,6 +5235,7 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
         # Preserve the complete API records, including genotypes, for future
         # display. Deduplicate by animal (each record is one animal).
         rec["MutationDetails"] = mutations
+        rec["GenotypeCombination"] = mutation_genotype_combination(mutations)
         rec["Mutations"] = list(dict.fromkeys(
             str(m.get("mutationname")).strip() for m in mutations
             if isinstance(m, dict) and m.get("mutationname")
@@ -5379,6 +5400,20 @@ def load_sheet(path, aliases):
     df2 = pd.DataFrame(out_cols)
     if aliases is ANIMAL_ALIASES:
         df2['Mutations'], df2['MutationType'], df2['MutationGrade'] = optional_animal_columns(df)
+        mutation_col = next((c for c in df.columns if str(c).strip().casefold() in ('mutations','mutation')), None)
+        combinations=[]
+        for value in (df[mutation_col].tolist() if mutation_col is not None else [None]*len(df)):
+            if isinstance(value, list):
+                details=value
+            elif isinstance(value, str) and value.lstrip().startswith('['):
+                try: details=json.loads(value)
+                except (ValueError, TypeError): details=[]
+            else:
+                details=[]
+            combinations.append(mutation_genotype_combination(details))
+        df2['GenotypeCombination'] = combinations
+        if not any(combinations):
+            print('Note: Complete genotype combinations require structured API mutations or JSON mutation details in the export.')
         if not any(v is not None for v in df2['Mutations']):
             print('Note: No Mutations column was found in the animal export.')
         if not any(v is not None for v in df2['MutationGrade']):
