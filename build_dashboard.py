@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.9"
+DASHBOARD_VERSION = "2.0"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -183,6 +183,7 @@ body{
 .chart-title{ font-size:16.8px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
+.genotype-note{color:var(--ink-soft);font-size:10px;text-align:center;padding:0 4px 8px;}
 
 .missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
 
@@ -867,11 +868,10 @@ function renderAnimalsPage(){
 
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
-  renderOptionalMutationChart('animals-chart-mutations', rows, 'Mutations', pageId);
-  renderOptionalMutationChart('animals-chart-mutationtype', rows, 'MutationGrade', pageId);
+  renderOptionalMutationChart('animals-chart-genotype', rows, 'MutationGrade', pageId);
+  renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
 
   renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
@@ -882,8 +882,7 @@ function renderAnimalsPage(){
   renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
-  renderListSlicer('animals-slicer-mutations', pageId, 'Mutations', 'Mutations', null, all);
-  renderListSlicer('animals-slicer-mutationtype', pageId, 'MutationGrade', 'Genotype', null, all);
+  renderListSlicer('animals-slicer-genotype', pageId, 'MutationGrade', 'Genotype', 'Hom, Het, WT, +/−, etc.', all);
 
   renderActiveFilterPills(pageId);
 }
@@ -1089,8 +1088,7 @@ __CSS__
   <div class="slicer-rail">
     <div class="slicer" id="animals-slicer-sex"></div>
     <div class="slicer" id="animals-slicer-strain"></div>
-    <div class="slicer" id="animals-slicer-mutations"></div>
-    <div class="slicer" id="animals-slicer-mutationtype"></div>
+    <div class="slicer" id="animals-slicer-genotype"></div>
     <div class="slicer" id="animals-slicer-responsible"></div>
     <div class="slicer" id="animals-slicer-license-title"></div>
     <div class="slicer" id="animals-slicer-license-number"></div>
@@ -1114,12 +1112,13 @@ __CSS__
       <div id="animals-chart-strain" class="plot-el"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Mutations</div>
-      <div id="animals-chart-mutations" class="plot-el"></div>
+      <div class="chart-title">Mice# by Genotype</div>
+      <div id="animals-chart-genotype" class="plot-el"></div>
+      <div class="genotype-note">One mouse may appear in multiple genotype categories.</div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Genotype</div>
-      <div id="animals-chart-mutationtype" class="plot-el"></div>
+      <div class="chart-title">Mice# by Responsible</div>
+      <div id="animals-chart-responsible" class="plot-el"></div>
     </div>
     <div class="chart-card">
       <div class="chart-title">Mice# by Room</div>
@@ -1128,10 +1127,6 @@ __CSS__
     <div class="chart-card">
       <div class="chart-title">Mice# by Ethical approval</div>
       <div id="animals-chart-license" class="plot-el"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Mice# by Responsible</div>
-      <div id="animals-chart-responsible" class="plot-el"></div>
     </div>
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age (months)</div>
