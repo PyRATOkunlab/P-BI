@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "1.8"
+DASHBOARD_VERSION = "1.9"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -543,7 +543,7 @@ function renderOptionalMutationChart(elId, rows, field, pageId){
   if(!usable.length){
     const el=document.getElementById(elId);
     Plotly.purge(el);
-    el.innerHTML='<div class="missing-data">No '+(field==='Mutations'?'mutation':'mutation type')+' values available in this animal dataset or selection. Check the PyRAT animal export / API fields.</div>';
+    el.innerHTML='<div class="missing-data">No '+(field==='Mutations'?'mutation':'genotype')+' values available in this animal dataset or selection. Check the PyRAT animal export / API fields.</div>';
     return;
   }
   renderCategoryChart(elId, usable, field, pageId, {limit:9});
@@ -868,7 +868,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-sex', rows, 'Sex', pageId, {donut:true});
   renderCategoryChart('animals-chart-strain', rows, 'Strain', pageId, {limit:9});
   renderOptionalMutationChart('animals-chart-mutations', rows, 'Mutations', pageId);
-  renderOptionalMutationChart('animals-chart-mutationtype', rows, 'MutationType', pageId);
+  renderOptionalMutationChart('animals-chart-mutationtype', rows, 'MutationGrade', pageId);
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
@@ -883,7 +883,7 @@ function renderAnimalsPage(){
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
   renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
   renderListSlicer('animals-slicer-mutations', pageId, 'Mutations', 'Mutations', null, all);
-  renderListSlicer('animals-slicer-mutationtype', pageId, 'MutationType', 'Mutation type', null, all);
+  renderListSlicer('animals-slicer-mutationtype', pageId, 'MutationGrade', 'Genotype', null, all);
 
   renderActiveFilterPills(pageId);
 }
@@ -1118,7 +1118,7 @@ __CSS__
       <div id="animals-chart-mutations" class="plot-el"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Mutation Type</div>
+      <div class="chart-title">Mice# by Genotype</div>
       <div id="animals-chart-mutationtype" class="plot-el"></div>
     </div>
     <div class="chart-card">
@@ -4916,6 +4916,26 @@ MUTATION_NAMES = ['Mutations', 'Mutation', 'מוטציות', 'מוטציה']
 MUTATION_AND_TYPE_NAMES = ['Mutations and type', 'Mutations and Type', 'Mutation and type',
                            'Mutations & type', 'Mutations & Type', 'מוטציות וסוג']
 MUTATION_TYPE_NAMES = ['Mutation type', 'Mutation Type', 'Type of mutation', 'סוג מוטציה']
+MUTATION_GRADE_NAMES = ['Mutation grade', 'Mutation Grade', 'Mutation genotype',
+                        'Mutation Genotype', 'Genotype (mutation)', 'MutationGrade']
+
+def genotype_values_from_export(value):
+    """Only extract grades when clearly encoded, without treating mutation classes as grades."""
+    if value is None: return None
+    if isinstance(value, list):
+        grades = [str(m.get('mutationgrade')).strip() for m in value
+                  if isinstance(m, dict) and m.get('mutationgrade')]
+        return list(dict.fromkeys(grades)) or None
+    text = str(value).strip()
+    if not text or text.lower() in ('none', 'nan', 'null'): return None
+    if text.startswith('['):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list): return genotype_values_from_export(parsed)
+        except (ValueError, TypeError): pass
+    # An explicit grade column is acceptable as a single value. Multi-mutant
+    # string exports are not reliably parseable without structured records.
+    return text
 
 def mutation_values(mutation, combined, explicit_type=None):
     """Respect two distinct PyRAT columns; don't guess from strain or genotype."""
@@ -4945,20 +4965,23 @@ def optional_animal_columns(df):
     def col(aliases):
         key=next((names[a.casefold()] for a in aliases if a.casefold() in names),None)
         return df[key].tolist() if key is not None else [None]*len(df)
-    muts, combined, types=col(MUTATION_NAMES),col(MUTATION_AND_TYPE_NAMES),col(MUTATION_TYPE_NAMES)
+    muts, combined, types, grades=(col(MUTATION_NAMES), col(MUTATION_AND_TYPE_NAMES),
+                                  col(MUTATION_TYPE_NAMES), col(MUTATION_GRADE_NAMES))
     vals=[]
-    for a,b,c in zip(muts,combined,types):
+    for a,b,c,g in zip(muts,combined,types,grades):
         if isinstance(a,str) and a.strip().startswith('['):
             try:
                 parsed=json.loads(a)
                 if isinstance(parsed,list) and all(isinstance(m,dict) for m in parsed):
                     vals.append((list(dict.fromkeys(str(m['mutationname']) for m in parsed if m.get('mutationname'))),
-                                 list(dict.fromkeys(str(m['mutationtype']) for m in parsed if m.get('mutationtype')))))
+                                 list(dict.fromkeys(str(m['mutationtype']) for m in parsed if m.get('mutationtype'))),
+                                 genotype_values_from_export(parsed)))
                     continue
             except (ValueError,TypeError):
                 pass
-        vals.append(mutation_values(clean_val(a),clean_val(b),clean_val(c)))
-    return [x[0] for x in vals],[x[1] for x in vals]
+        mutation, mutation_type = mutation_values(clean_val(a),clean_val(b),clean_val(c))
+        vals.append((mutation, mutation_type, genotype_values_from_export(clean_val(g))))
+    return [x[0] for x in vals],[x[1] for x in vals],[x[2] for x in vals]
 
 LICENSE_ALIASES = {
     'Number':          ['Number', 'מספר'],
@@ -5205,6 +5228,14 @@ def fetch_animals_live(base_url, client_token, user_token, page_size=200, debug_
             str(m.get("mutationtype")).strip() for m in mutations
             if isinstance(m, dict) and m.get("mutationtype")
         ))
+        # mutationgrade is the animal's actual genotype (Hom, Het, +/-,
+        # ko/ko, etc.), NOT its mutation class (Knockout/Transgenic/etc.).
+        # A mouse with multiple mutations of the same grade is counted once
+        # in that grade; different grades can both be represented.
+        rec["MutationGrade"] = list(dict.fromkeys(
+            str(m.get("mutationgrade")).strip() for m in mutations
+            if isinstance(m, dict) and m.get("mutationgrade")
+        ))
         age_days = r.get("age_days")
         rec["AgeM"] = round(age_days / 30.44) if age_days is not None else None
         rec["Genotype"] = None  # not exposed by the public API
@@ -5352,11 +5383,11 @@ def load_sheet(path, aliases):
         )
     df2 = pd.DataFrame(out_cols)
     if aliases is ANIMAL_ALIASES:
-        df2['Mutations'], df2['MutationType'] = optional_animal_columns(df)
+        df2['Mutations'], df2['MutationType'], df2['MutationGrade'] = optional_animal_columns(df)
         if not any(v is not None for v in df2['Mutations']):
             print('Note: No Mutations column was found in the animal export.')
-        if not any(v is not None for v in df2['MutationType']):
-            print('Note: Mutation type is unavailable or not separable from the available columns.')
+        if not any(v is not None for v in df2['MutationGrade']):
+            print('Note: Genotype grades require the live API mutations.mutationgrade or an explicit Mutation Grade export column.')
     return [{k: clean_val(v) for k, v in row.items()} for _, row in df2.iterrows()]
 
 def main():
