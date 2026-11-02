@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "2.4"
+DASHBOARD_VERSION = "2.5"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -193,6 +193,13 @@ body{
 
 .missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
 
+.age-chart-layout{display:flex;align-items:stretch;gap:12px;min-width:0;}
+.age-chart-layout .plot-el{flex:1;min-width:0;}
+.age-chart-legend{width:265px;flex:0 0 265px;display:flex;flex-direction:column;gap:9px;overflow-y:auto;max-height:360px;padding:13px 7px 10px 9px;border-left:1px solid var(--border);}
+.age-chart-legend .age-genotype-key{display:flex;align-items:flex-start;gap:7px;max-width:100%;overflow-wrap:anywhere;font-size:10.5px;line-height:1.4;}
+.age-chart-legend .age-genotype-key i{display:inline-block;width:11px;height:11px;flex:0 0 11px;margin-top:2px;border-radius:2px;}
+.age-chart-legend .age-genotype-key span{min-width:0;}
+@media(max-width:850px){.age-chart-layout{flex-direction:column;}.age-chart-legend{width:100%;flex:auto;max-height:200px;border-left:0;border-top:1px solid var(--border);}}
 .age-genotype-legend-title{color:var(--ink-soft);font-size:11px;text-align:center;margin:8px 0;}
 .age-genotype-legend{display:flex;flex-wrap:wrap;gap:8px 15px;padding:5px 12px 14px;justify-content:center;}
 .age-genotype-key{display:inline-flex;align-items:flex-start;gap:6px;font-size:10px;color:var(--ink);max-width:390px;overflow-wrap:anywhere;}
@@ -677,7 +684,6 @@ function renderGenotypeAgeCharts(rows, pageId){
   const colors = new Map(ordered.map((c,i)=>[c, PALETTE[i%PALETTE.length]]));
   const ages = Array.from({length:24},(_,i)=>i+1);
   const sexCharts = [['m','animals-chart-age-males'],['f','animals-chart-age-females']];
-  const totals = new Map();
   for(const [sex, elId] of sexCharts){
     const subset=rows.filter(r=>r.Sex===sex);
     const categories = ordered.filter(c=>subset.some(r=>r.GenotypeCombination===c));
@@ -689,7 +695,6 @@ function renderGenotypeAgeCharts(rows, pageId){
         return r.GenotypeCombination===cat || (cat==='(Genotype unavailable)' && !r.GenotypeCombination);
       }).filter(r=>Number.isFinite(Number(r.AgeM)) && Math.round(Number(r.AgeM))===m).length);
       const color = colors.get(cat) || '#8A8A8A';
-      totals.set(cat,(totals.get(cat)||0)+ys.reduce((a,b)=>a+b,0));
       return {type:'bar',name:cat,x:ages,y:ys,marker:{color},
         customdata:ages.map(()=>cat),
         hovertemplate:'Age %{x} months<br>%{customdata}<br>%{y} mice<extra></extra>'};
@@ -697,7 +702,7 @@ function renderGenotypeAgeCharts(rows, pageId){
     const layout={barmode:'stack',margin:{l:48,r:18,t:20,b:48},
       xaxis:{title:{text:'Age (months)',font:{size:11,color:'#A7A7A7'}},
         tickmode:'array',tickvals:ages,tickfont:{size:10,color:'#A7A7A7'},gridcolor:'#2A2A2A'},
-      yaxis:{title:{text:'Mice',font:{size:11,color:'#A7A7A7'}},
+      yaxis:{title:{text:'# of Mice',font:{size:11,color:'#A7A7A7'}},
         rangemode:'tozero',dtick:1,tickfont:{size:10,color:'#A7A7A7'},gridcolor:'#2A2A2A'},
       showlegend:false,paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
       font:{family:'Segoe UI',color:'#F2F2F2'},
@@ -707,6 +712,18 @@ function renderGenotypeAgeCharts(rows, pageId){
       }).filter(Boolean)};
     Plotly.react(elId,traces,layout,PLOTLY_CONFIG);
     _plotDivs.add(elId);
+    const legendId = sex==='m' ? 'animals-age-legend-males' : 'animals-age-legend-females';
+    const legend = document.getElementById(legendId);
+    if(legend){
+      legend.replaceChildren();
+      for(const cat of categories){
+        const item=document.createElement('div'); item.className='age-genotype-key';
+        const sw=document.createElement('i'); sw.style.background=colors.get(cat)||'#8A8A8A';
+        const label=document.createElement('span'); label.textContent=cat;
+        item.append(sw,label); legend.appendChild(item);
+      }
+      if(!categories.length) legend.textContent='No genotype data for this selection';
+    }
     const div=document.getElementById(elId);
     div.removeAllListeners && div.removeAllListeners('plotly_click');
     div.on('plotly_click',ev=>{
@@ -719,17 +736,7 @@ function renderGenotypeAgeCharts(rows, pageId){
       rerenderPage(pageId);
     });
   }
-  const legend=document.getElementById('animals-age-genotype-legend');
-  if(legend){
-    legend.replaceChildren();
-    for(const cat of [...ordered,'(Genotype unavailable)']){
-      if(!totals.get(cat)) continue;
-      const item=document.createElement('span');item.className='age-genotype-key';
-      const sw=document.createElement('i');sw.style.background=colors.get(cat)||'#8A8A8A';
-      const label=document.createElement('span');label.textContent=cat;
-      item.append(sw,label);legend.appendChild(item);
-    }
-  }
+
 }
 
 function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField, splitOrder, splitColors, splitNames){
@@ -1257,13 +1264,11 @@ __CSS__
     </div>
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age — Males</div>
-      <div id="animals-chart-age-males" class="plot-el tall"></div>
+      <div class="age-chart-layout"><div id="animals-chart-age-males" class="plot-el tall"></div><div id="animals-age-legend-males" class="age-chart-legend" aria-label="Male genotype legend"></div></div>
     </div>
     <div class="chart-card full">
       <div class="chart-title">Mice# by Age — Females</div>
-      <div id="animals-chart-age-females" class="plot-el tall"></div>
-      <div class="age-genotype-legend-title">Genotype combinations — same colors in both charts</div>
-      <div id="animals-age-genotype-legend" class="age-genotype-legend"></div>
+      <div class="age-chart-layout"><div id="animals-chart-age-females" class="plot-el tall"></div><div id="animals-age-legend-females" class="age-chart-legend" aria-label="Female genotype legend"></div></div>
     </div>
   </div>
 </section>
