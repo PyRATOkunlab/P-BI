@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "2.3"
+DASHBOARD_VERSION = "2.4"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -192,6 +192,11 @@ body{
 .genotype-note{color:var(--ink-soft);font-size:10px;text-align:center;padding:0 4px 8px;}
 
 .missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
+
+.age-genotype-legend-title{color:var(--ink-soft);font-size:11px;text-align:center;margin:8px 0;}
+.age-genotype-legend{display:flex;flex-wrap:wrap;gap:8px 15px;padding:5px 12px 14px;justify-content:center;}
+.age-genotype-key{display:inline-flex;align-items:flex-start;gap:6px;font-size:10px;color:var(--ink);max-width:390px;overflow-wrap:anywhere;}
+.age-genotype-key i{display:inline-block;flex:0 0 10px;height:10px;margin-top:2px;border-radius:2px;}
 
 /* ---------- Table page ---------- */
 .table-tools{ display:flex; gap:10px; align-items:center; margin-bottom:10px; }
@@ -663,6 +668,70 @@ function renderGroupedBar(elId, rows, catField, seriesFields, seriesNames, pageI
 // Single-series bar chart over a numeric field, one bar per integer value
 // in [minVal, maxVal] (zero-filled for values with no data, so spacing
 // stays even). Used for "age in months" as a bar rather than a pie.
+// Stacked age distributions by sex and complete mutation-specific genotype.
+// Categories and their colors come from the full animal dataset so males and
+// females use the same color even when a category is absent in one group.
+function renderGenotypeAgeCharts(rows, pageId){
+  const allCats = uniqueValues(DATA.animals, 'GenotypeCombination');
+  const ordered = allCats.filter(c=>c && c!=='(Blank)');
+  const colors = new Map(ordered.map((c,i)=>[c, PALETTE[i%PALETTE.length]]));
+  const ages = Array.from({length:24},(_,i)=>i+1);
+  const sexCharts = [['m','animals-chart-age-males'],['f','animals-chart-age-females']];
+  const totals = new Map();
+  for(const [sex, elId] of sexCharts){
+    const subset=rows.filter(r=>r.Sex===sex);
+    const categories = ordered.filter(c=>subset.some(r=>r.GenotypeCombination===c));
+    const missing = subset.some(r=>!r.GenotypeCombination || r.GenotypeCombination==='(Blank)');
+    if(missing) categories.push('(Genotype unavailable)');
+    const traces=categories.map(cat=>{
+      const ys=ages.map(m=>subset.filter(r=>{
+        const age=Number(r.AgeM);
+        return r.GenotypeCombination===cat || (cat==='(Genotype unavailable)' && !r.GenotypeCombination);
+      }).filter(r=>Number.isFinite(Number(r.AgeM)) && Math.round(Number(r.AgeM))===m).length);
+      const color = colors.get(cat) || '#8A8A8A';
+      totals.set(cat,(totals.get(cat)||0)+ys.reduce((a,b)=>a+b,0));
+      return {type:'bar',name:cat,x:ages,y:ys,marker:{color},
+        customdata:ages.map(()=>cat),
+        hovertemplate:'Age %{x} months<br>%{customdata}<br>%{y} mice<extra></extra>'};
+    });
+    const layout={barmode:'stack',margin:{l:48,r:18,t:20,b:48},
+      xaxis:{title:{text:'Age (months)',font:{size:11,color:'#A7A7A7'}},
+        tickmode:'array',tickvals:ages,tickfont:{size:10,color:'#A7A7A7'},gridcolor:'#2A2A2A'},
+      yaxis:{title:{text:'Mice',font:{size:11,color:'#A7A7A7'}},
+        rangemode:'tozero',dtick:1,tickfont:{size:10,color:'#A7A7A7'},gridcolor:'#2A2A2A'},
+      showlegend:false,paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
+      font:{family:'Segoe UI',color:'#F2F2F2'},
+      annotations:ages.map(age=>{
+        const count=subset.filter(r=>Number.isFinite(Number(r.AgeM)) && Math.round(Number(r.AgeM))===age).length;
+        return count ? {x:age,y:count,text:String(count),showarrow:false,yshift:12,font:{size:10,color:'#F2F2F2'}} : null;
+      }).filter(Boolean)};
+    Plotly.react(elId,traces,layout,PLOTLY_CONFIG);
+    _plotDivs.add(elId);
+    const div=document.getElementById(elId);
+    div.removeAllListeners && div.removeAllListeners('plotly_click');
+    div.on('plotly_click',ev=>{
+      if(!ev || !ev.points || !ev.points[0]) return;
+      const pt=ev.points[0];
+      // Apply both age and genotype together, so clicked segment is meaningful.
+      state[pageId].filters.AgeM={type:'set',set:new Set([String(pt.x)])};
+      const cat=pt.data.customdata[pt.pointNumber];
+      if(cat!=='(Genotype unavailable)') state[pageId].filters.GenotypeCombination={type:'set',set:new Set([cat])};
+      rerenderPage(pageId);
+    });
+  }
+  const legend=document.getElementById('animals-age-genotype-legend');
+  if(legend){
+    legend.replaceChildren();
+    for(const cat of [...ordered,'(Genotype unavailable)']){
+      if(!totals.get(cat)) continue;
+      const item=document.createElement('span');item.className='age-genotype-key';
+      const sw=document.createElement('i');sw.style.background=colors.get(cat)||'#8A8A8A';
+      const label=document.createElement('span');label.textContent=cat;
+      item.append(sw,label);legend.appendChild(item);
+    }
+  }
+}
+
 function renderNumericBar(elId, rows, field, pageId, minVal, maxVal, splitField, splitOrder, splitColors, splitNames){
   const xs = [];
   for(let m=minVal; m<=maxVal; m++) xs.push(m);
@@ -929,7 +998,7 @@ function renderAnimalsPage(){
   renderCategoryChart('animals-chart-responsible', rows, 'Responsible', pageId, {limit:9});
   renderCategoryChart('animals-chart-room', rows, 'Room', pageId, {limit:9});
   renderCategoryChart('animals-chart-license', rows, 'LicenseNumber', pageId, {limit:9});
-  renderNumericBar('animals-chart-age', rows, 'AgeM', pageId, 1, 24, 'Sex', ['m','f'], [PALETTE[0], PALETTE[1]], ['Male','Female']);
+  renderGenotypeAgeCharts(rows, pageId);
 
   renderListSlicer('animals-slicer-sex', pageId, 'Sex', 'Sex', null, all);
   renderDateRangeSlicer('animals-slicer-dob', pageId, 'DOB', 'Date of birth', null, all);
@@ -1187,8 +1256,14 @@ __CSS__
       <div id="animals-chart-license" class="plot-el"></div>
     </div>
     <div class="chart-card full">
-      <div class="chart-title">Mice# by Age (months)</div>
-      <div id="animals-chart-age" class="plot-el"></div>
+      <div class="chart-title">Mice# by Age — Males</div>
+      <div id="animals-chart-age-males" class="plot-el tall"></div>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-title">Mice# by Age — Females</div>
+      <div id="animals-chart-age-females" class="plot-el tall"></div>
+      <div class="age-genotype-legend-title">Genotype combinations — same colors in both charts</div>
+      <div id="animals-age-genotype-legend" class="age-genotype-legend"></div>
     </div>
   </div>
 </section>
