@@ -23,7 +23,7 @@ import pandas as pd
 # shown in the dashboard's topbar (see __VERSION__ below) so anyone looking
 # at the HTML can tell which build they're on. The build date next to it
 # updates on its own every time the script runs, no editing needed for that.
-DASHBOARD_VERSION = "2.2"
+DASHBOARD_VERSION = "2.3"
 
 CSS = r""":root{
   --bg:#0E0E0E;
@@ -400,6 +400,21 @@ function getFilteredRows(pageId){
   });
 }
 
+// A genotype combination is meaningful in the context of its line/strain.
+// When switching strains, remove selected combinations that do not belong
+// to the newly selected population (while preserving overlapping selections).
+function reconcileAnimalGenotypes(){
+  const filters = state.animals.filters;
+  const selected = filters.GenotypeCombination;
+  if(!selected || selected.type!=='set') return;
+  const eligible = new Set(uniqueValues(DATA.animals.filter(r=>{
+    const strain = filters.Strain;
+    return !strain || strain.type!=='set' || strain.set.has(String(r.Strain));
+  }), 'GenotypeCombination').map(String));
+  selected.set.forEach(v=>{ if(!eligible.has(String(v))) selected.set.delete(v); });
+  if(selected.set.size===0) delete filters.GenotypeCombination;
+}
+
 function toggleSetFilter(pageId, field, value){
   const filters = state[pageId].filters;
   if(!filters[field] || filters[field].type!=='set'){
@@ -408,6 +423,7 @@ function toggleSetFilter(pageId, field, value){
   const set = filters[field].set;
   if(set.has(value)) set.delete(value); else set.add(value);
   if(set.size===0) delete filters[field];
+  if(pageId==='animals' && field==='Strain') reconcileAnimalGenotypes();
   rerenderPage(pageId);
 }
 
@@ -733,7 +749,17 @@ document.addEventListener('click', (e)=>{
 
 function renderListSlicer(containerId, pageId, field, headingText, subText, allRows){
   const container = document.getElementById(containerId);
-  const values = uniqueValues(allRows, field);
+  // Cascading genotype options: only show combinations for the selected
+  // strain(s), not every genotype across the facility. Keep other slicers
+  // independent, so checking sex/age doesn't hide available genotypes.
+  let sourceRows = allRows;
+  if(pageId==='animals' && field==='GenotypeCombination'){
+    const strainSpec = state.animals.filters.Strain;
+    if(strainSpec && strainSpec.type==='set' && strainSpec.set.size){
+      sourceRows = allRows.filter(r=>strainSpec.set.has(String(r.Strain)));
+    }
+  }
+  const values = uniqueValues(sourceRows, field);
   const spec = state[pageId].filters[field];
   const activeSet = (spec && spec.type==='set') ? spec.set : new Set();
   const btnLabel = activeSet.size===0 ? 'All' : (activeSet.size===1 ? Array.from(activeSet)[0] : `${activeSet.size} selected`);
@@ -873,6 +899,7 @@ function renderActiveFilterPills(pageId){
   el.querySelectorAll('button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       delete state[pageId].filters[btn.dataset.field];
+      if(pageId==='animals' && btn.dataset.field==='Strain') reconcileAnimalGenotypes();
       rerenderPage(pageId);
     });
   });
@@ -911,8 +938,8 @@ function renderAnimalsPage(){
   renderListSlicer('animals-slicer-license-title', pageId, 'LicenseTitle', 'Ethical approval', 'Ethical approval title', all);
   renderListSlicer('animals-slicer-license-number', pageId, 'LicenseNumber', 'Ethical approval', 'Ethical approval ID', all);
   renderListSlicer('animals-slicer-responsible', pageId, 'Responsible', 'Responsible', null, all);
-  renderListSlicer('animals-slicer-strain', pageId, 'Strain', '#Line/Strain', 'Line / Strain (Name)', all);
-  renderListSlicer('animals-slicer-genotype', pageId, 'GenotypeCombination', 'Genotype combination', 'Mutation-specific Hom, Het, WT, +/−, etc.', all);
+  renderListSlicer('animals-slicer-strain', pageId, 'Strain', 'Line/Strain', 'Line / Strain (Name)', all);
+  renderListSlicer('animals-slicer-genotype', pageId, 'GenotypeCombination', 'Genotype Mutation', 'Mutation-specific Hom, Het, WT, +/−, etc.', all);
 
   renderActiveFilterPills(pageId);
 }
