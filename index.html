@@ -3765,6 +3765,12 @@ body{
 .chart-title{ font-size:16.8px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
 .plot-el{ width:100%; height:300px; }
 .plot-el.tall{ height:360px; }
+.genotype-legend{display:flex;flex-direction:column;gap:5px;margin:0 3px 9px;max-height:230px;overflow-y:auto;}
+.genotype-legend-item{display:flex;align-items:flex-start;gap:8px;width:100%;background:transparent;color:var(--ink);border:1px solid var(--border);border-radius:4px;padding:6px 8px;text-align:left;font-family:inherit;font-size:11px;cursor:pointer;}
+.genotype-legend-item:hover{background:var(--accent-dim);border-color:var(--accent);}
+.genotype-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;margin-top:3px;}
+.genotype-label{flex:1;overflow-wrap:anywhere;line-height:1.35;}
+.genotype-legend-item strong{font-variant-numeric:tabular-nums;flex-shrink:0;}
 .genotype-note{color:var(--ink-soft);font-size:10px;text-align:center;padding:0 4px 8px;}
 
 .missing-data{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);font-size:12px;padding:25px;}
@@ -3825,7 +3831,7 @@ footer.foot{ text-align:center; color:var(--ink-soft); font-size:11px; padding:2
 <div class="topbar">
   <div class="brand">
     <div class="brand-title">PyRAT Facility Dashboard</div>
-    <div class="brand-sub">Animal &amp; Cage Ethical Approval Management &nbsp;·&nbsp; <b>1,469</b> animal records &nbsp;·&nbsp; <b>16</b> active licenses &nbsp;·&nbsp; v2.1 (2026-11-02)</div>
+    <div class="brand-sub">Animal &amp; Cage Ethical Approval Management &nbsp;·&nbsp; <b>1,469</b> animal records &nbsp;·&nbsp; <b>16</b> active licenses &nbsp;·&nbsp; v2.2 (2026-11-02)</div>
   </div>
   <div class="tabs">
     <button class="tab-btn" data-page="animals">Animals</button>
@@ -3870,8 +3876,9 @@ footer.foot{ text-align:center; color:var(--ink-soft); font-size:11px; padding:2
       <div id="animals-chart-strain" class="plot-el"></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Mice# by Genotype Combination Combination</div>
+      <div class="chart-title">Mice# by Genotype</div>
       <div id="animals-chart-genotype" class="plot-el"></div>
+      <div id="animals-genotype-legend" class="genotype-legend"></div>
       <div class="genotype-note">Each mouse is counted once by its complete recorded genotype combination.</div>
     </div>
     <div class="chart-card">
@@ -4281,13 +4288,17 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
   const mode = opts.mode || 'count'; // 'count' | 'sum'
   const valField = opts.valField;
   const hole = opts.donut ? 0.55 : 0;
-  const entries = mode==='sum'
-    ? mapToSortedEntries(sumBy(rows, field, valField), opts.limit||8)
-    : mapToSortedEntries(countBy(rows, field), opts.limit||8);
+  const entries = opts.genotype
+    ? mapToSortedEntries(countBy(rows, field)) // never merge distinct genotype combinations into Other
+    : mode==='sum'
+      ? mapToSortedEntries(sumBy(rows, field, valField), opts.limit||8)
+      : mapToSortedEntries(countBy(rows, field), opts.limit||8);
 
   const labels = entries.map(e=>String(e[0]));
   const values = entries.map(e=>e[1]);
-  const displayLabels = labels.map(l=> l.length>34 ? l.slice(0,32)+'…' : l);
+  const displayLabels = opts.genotype
+    ? labels.map((_,i)=> String(i+1)) // stable slice indexes; full names in the legend below
+    : labels.map(l=> l.length>34 ? l.slice(0,32)+'…' : l);
   const activeSet = (state[pageId].filters[field] && state[pageId].filters[field].type==='set')
       ? state[pageId].filters[field].set : null;
 
@@ -4304,7 +4315,7 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
     hole,
     domain:{x:[0.255,0.745], y:[0.255,0.745]},
     marker:{colors, line:{color:'#0E0E0E', width:1.5}},
-    textinfo:'value',
+    textinfo:opts.genotype ? 'none' : 'value',
     textposition:'outside',
     textfont:{size:12.7, color:'#F2F2F2', family:'Segoe UI'},
     automargin:true,
@@ -4313,12 +4324,32 @@ function renderCategoryChart(elId, rows, field, pageId, opts){
   };
   const layout = {
     margin:{l:26,r:6,t:6,b:6},
-    showlegend:true,
+    showlegend:!opts.genotype,
     legend:{orientation:'v', font:{size:10.5, family:'Segoe UI', color:'#F2F2F2'}, x:1, y:0.5},
     paper_bgcolor:'rgba(0,0,0,0)',
     plot_bgcolor:'rgba(0,0,0,0)',
     font:{family:'Segoe UI', color:'#F2F2F2'},
   };
+  if(opts.genotype){
+    // Full-length, non-truncated labels outside Plotly so no two genotypes look identical.
+    const legend = document.getElementById('animals-genotype-legend');
+    if(legend){
+      legend.replaceChildren();
+      entries.forEach(([label,value],i)=>{
+        const item = document.createElement('button');
+        item.type='button'; item.className='genotype-legend-item';
+        item.title='Filter to: '+label;
+        const swatch=document.createElement('span');
+        swatch.className='genotype-swatch'; swatch.style.background=PALETTE[i%PALETTE.length];
+        const txt=document.createElement('span'); txt.className='genotype-label';
+        txt.textContent=(i+1)+'. '+label;
+        const count=document.createElement('strong'); count.textContent=String(value);
+        item.append(swatch,txt,count);
+        item.addEventListener('click',()=>toggleSetFilter(pageId,field,String(label)));
+        legend.appendChild(item);
+      });
+    }
+  }
   Plotly.react(elId, [trace], layout, PLOTLY_CONFIG).then(()=> equalizePieSize(elId));
   _plotDivs.add(elId);
   const div = document.getElementById(elId);
@@ -4349,7 +4380,7 @@ function renderOptionalMutationChart(elId, rows, field, pageId){
     el.innerHTML='<div class="missing-data">No '+(field==='Mutations'?'mutation':'genotype')+' values available in this animal dataset or selection. Check the PyRAT animal export / API fields.</div>';
     return;
   }
-  renderCategoryChart(elId, usable, field, pageId, {limit:9});
+  renderCategoryChart(elId, usable, field, pageId, field==='GenotypeCombination' ? {genotype:true} : {limit:9});
 }
 
 function renderGauge(elId, rows, numField, denField){
